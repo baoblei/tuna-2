@@ -11,6 +11,7 @@
 [Yatai Ji](https://yataiji.github.io/)<sup>2</sup>,
 [Sen He](https://senhe.github.io/)<sup>1</sup>,
 [Jonas Schult](https://jonasschult.github.io/)<sup>1</sup>,
+[Belinda Zeng](https://www.linkedin.com/in/belindazeng/)<sup>1</sup>,
 [Tao Xiang](https://www.surrey.ac.uk/people/tao-xiang)<sup>1</sup>,
 [Wenhu Chen](https://wenhuchen.github.io/)<sup>3</sup>,
 [Ping Luo](http://luoping.me/)<sup>2</sup>,
@@ -42,8 +43,8 @@ We simplify [Tuna](https://arxiv.org/abs/2501.10441) by progressively stripping 
 ## Installation
 
 ```bash
-git clone https://github.com/user/tuna.git
-cd tuna
+git clone https://github.com/facebookresearch/tuna-2.git
+cd tuna-2
 bash scripts/setup_uv.sh   # creates .venv with all dependencies
 source .venv/bin/activate
 ```

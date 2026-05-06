@@ -3,6 +3,10 @@
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# ===================================================================
+# Note: This file is copied and adapted from the Show-o2 repository.
+# ===================================================================
 
 # coding=utf-8
 # pyre-unsafe
@@ -48,13 +52,9 @@ def get_hyper_params(
         height = 512
     latent_width = width // 16
     latent_height = height // 16
-    num_image_tokens = (
-        latent_width * latent_height + int(add_aspect_ratio_embeds) * 2 + 1
-    )
+    num_image_tokens = latent_width * latent_height + int(add_aspect_ratio_embeds) * 2 + 1
     num_video_tokens = (
-        latent_width * latent_height * latent_frames
-        + int(add_aspect_ratio_embeds) * 2
-        + 1
+        latent_width * latent_height * latent_frames + int(add_aspect_ratio_embeds) * 2 + 1
     )
     if generation_mode == "t2i":
         calculated_seq_len = (
@@ -433,9 +433,7 @@ class Tuna2RPixelPipeline(TunaPipelineBase):
             pixel_values = pixel_values.to(self.device, self.weight_dtype)
             clean_image_embeds = self.model.prepare_clean_image_embeds(pixel_values)
             if guidance_scale > 0:
-                clean_image_embeds = torch.cat(
-                    [clean_image_embeds, clean_image_embeds], dim=0
-                )
+                clean_image_embeds = torch.cat([clean_image_embeds, clean_image_embeds], dim=0)
 
         model_kwargs = {
             "text_tokens": text_tokens,
@@ -451,9 +449,7 @@ class Tuna2RPixelPipeline(TunaPipelineBase):
         }
 
         # Sample using transport
-        samples = sample_fn(
-            z, self.model.tuna_model.t2i_generate, **model_kwargs
-        )[-1]
+        samples = sample_fn(z, self.model.tuna_model.t2i_generate, **model_kwargs)[-1]
 
         # Handle classifier-free guidance
         if guidance_scale > 0:
@@ -592,9 +588,7 @@ class Tuna2RPixelPipeline(TunaPipelineBase):
         }
 
         # Sample using transport
-        samples = sample_fn(
-            z, self.model.tuna_model.t2i_generate_edit, **model_kwargs
-        )[-1]
+        samples = sample_fn(z, self.model.tuna_model.t2i_generate_edit, **model_kwargs)[-1]
 
         # Handle classifier-free guidance
         if guidance_scale > 0:
@@ -643,20 +637,15 @@ class Tuna2RPixelPipeline(TunaPipelineBase):
             or self.generation_mode == "t2i_pixel"
         ):
             images = images.to(torch.float32)
-            images = (images - images.min()) / (
-                images.max() - images.min() + 1e-5
-            ) * 2.0 - 1.0
+            images = (images - images.min()) / (images.max() - images.min() + 1e-5) * 2.0 - 1.0
             images = denorm(images)
             pil_images = [Image.fromarray(image) for image in images]
             return pil_images
         else:
             images = torch.clamp((images + 1.0) / 2.0, min=0.0, max=1.0)
             images *= 255.0
-            images = (
-                images.permute(0, 2, 3, 4, 1).cpu().numpy().astype(np.uint8)
-            )  # [B, T, H, W, C]
+            images = images.permute(0, 2, 3, 4, 1).cpu().numpy().astype(np.uint8)  # [B, T, H, W, C]
 
             frames = [images]
 
             return frames
-

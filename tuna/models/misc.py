@@ -3,6 +3,10 @@
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# ===================================================================
+# Note: This file is copied and adapted from the Show-o2 repository.
+# ===================================================================
 
 # pyre-unsafe
 from __future__ import annotations
@@ -58,9 +62,7 @@ def prepare_gen_input(
     batch_text_tokens_null = []
     batch_modality_positions_null = []
     for prompt in prompts:
-        text_tokens = text_tokenizer(prompt, add_special_tokens=False)["input_ids"][
-            :(max_text_len)
-        ]
+        text_tokens = text_tokenizer(prompt, add_special_tokens=False)["input_ids"][:(max_text_len)]
 
         # For reca mode: use additive padding to match training behavior.
         # Training: tokens = prefix_tokens + [pad_id] * (num_image_tokens - 1)
@@ -69,9 +71,7 @@ def prepare_gen_input(
         if reca_pad_len > 0:
             text_tokens = text_tokens + [pad_id] * (reca_pad_len - 1)
 
-        modality_positions = torch.tensor(
-            [len(text_tokens) + 1 + 1, num_image_tokens]
-        ).unsqueeze(0)
+        modality_positions = torch.tensor([len(text_tokens) + 1 + 1, num_image_tokens]).unsqueeze(0)
         text_tokens = (
             [bos_id]
             + text_tokens
@@ -117,9 +117,7 @@ def prepare_gen_input(
     batch_modality_positions = torch.stack(batch_modality_positions, dim=0).to(device)
 
     batch_text_tokens_null = torch.stack(batch_text_tokens_null, dim=0).to(device)
-    batch_modality_positions_null = torch.stack(
-        batch_modality_positions_null, dim=0
-    ).to(device)
+    batch_modality_positions_null = torch.stack(batch_modality_positions_null, dim=0).to(device)
 
     return (
         batch_text_tokens,
@@ -166,9 +164,7 @@ def prepare_gen_input_edit(
 
     for prompt in prompts:
         # Tokenize text prompt and truncate if needed
-        text_tokens = text_tokenizer(prompt, add_special_tokens=False)["input_ids"][
-            :(max_text_len)
-        ]
+        text_tokens = text_tokenizer(prompt, add_special_tokens=False)["input_ids"][:(max_text_len)]
 
         # Modality positions for edit: two image regions
         # First image starts at position 2 (after bos + boi)
@@ -239,9 +235,7 @@ def prepare_gen_input_edit(
     batch_modality_positions = torch.stack(batch_modality_positions, dim=0).to(device)
 
     batch_text_tokens_null = torch.stack(batch_text_tokens_null, dim=0).to(device)
-    batch_modality_positions_null = torch.stack(
-        batch_modality_positions_null, dim=0
-    ).to(device)
+    batch_modality_positions_null = torch.stack(batch_modality_positions_null, dim=0).to(device)
 
     return (
         batch_text_tokens,
@@ -269,27 +263,15 @@ def prepare_mixed_modal_gen_input(
     batch_modality_positions_null = []
     for prompt, null in zip(prompts, nulls):
         text_tokens = text_tokenizer(prompt, add_special_tokens=False).input_ids
-        modality_positions = torch.tensor(
-            [len(text_tokens) + 1 + 1, num_image_tokens]
-        ).unsqueeze(0)
-        text_tokens = (
-            [bos_id]
-            + text_tokens
-            + [boi_id]
-            + [img_pad_id] * num_image_tokens
-            + [eoi_id]
-        )
+        modality_positions = torch.tensor([len(text_tokens) + 1 + 1, num_image_tokens]).unsqueeze(0)
+        text_tokens = [bos_id] + text_tokens + [boi_id] + [img_pad_id] * num_image_tokens + [eoi_id]
 
         text_tokens_null = text_tokenizer(null, add_special_tokens=False).input_ids
         modality_positions_null = torch.tensor(
             [len(text_tokens_null) + 1 + 1, num_image_tokens]
         ).unsqueeze(0)
         text_tokens_null = (
-            [bos_id]
-            + text_tokens_null
-            + [boi_id]
-            + [img_pad_id] * num_image_tokens
-            + [eoi_id]
+            [bos_id] + text_tokens_null + [boi_id] + [img_pad_id] * num_image_tokens + [eoi_id]
         )
 
         len_a = len(text_tokens)
@@ -316,9 +298,7 @@ def prepare_mixed_modal_gen_input(
     batch_modality_positions = torch.stack(batch_modality_positions, dim=0).to(device)
 
     batch_text_tokens_null = torch.stack(batch_text_tokens_null, dim=0).to(device)
-    batch_modality_positions_null = torch.stack(
-        batch_modality_positions_null, dim=0
-    ).to(device)
+    batch_modality_positions_null = torch.stack(batch_modality_positions_null, dim=0).to(device)
 
     return (
         batch_text_tokens,
@@ -387,16 +367,12 @@ class TimestepEmbedder(nn.Module):
         # https://github.com/openai/glide-text2im/blob/main/glide_text2im/nn.py
         half = dim // 2
         freqs = torch.exp(
-            -math.log(max_period)
-            * torch.arange(start=0, end=half, dtype=torch.float32)
-            / half
+            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
         ).to(device=t.device)
         args = t[:, None].float() * freqs[None]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
-            embedding = torch.cat(
-                [embedding, torch.zeros_like(embedding[:, :1])], dim=-1
-            )
+            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
         return embedding
 
     def forward(self, t, dtype):
@@ -413,9 +389,7 @@ class FinalLayer(nn.Module):
     def __init__(self, hidden_size: int, patch_size: int, out_channels: int) -> None:
         super().__init__()
         self.norm_final = RMSNorm(hidden_size)
-        self.linear = nn.Linear(
-            hidden_size, patch_size * patch_size * out_channels, bias=True
-        )
+        self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True)
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True)
         )
@@ -441,9 +415,7 @@ class UpdatedVisionTransformer(nn.Module):
         x = torch.cat(
             [
                 self.model.class_embedding.to(x.dtype)
-                + torch.zeros(
-                    x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device
-                ),
+                + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device),
                 x,
             ],
             dim=1,
@@ -472,9 +444,7 @@ class CLIPVisionEncoder(nn.Module):
         x = torch.cat(
             [
                 self.model.class_embedding.to(x.dtype)
-                + torch.zeros(
-                    x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device
-                ),
+                + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device),
                 x,
             ],
             dim=1,
@@ -554,9 +524,7 @@ def interpolate_pos_encoding(
     new_width = width // patch_size
 
     sqrt_num_positions = torch_int(num_positions**0.5)
-    patch_pos_embed = patch_pos_embed.reshape(
-        1, sqrt_num_positions, sqrt_num_positions, dim
-    )
+    patch_pos_embed = patch_pos_embed.reshape(1, sqrt_num_positions, sqrt_num_positions, dim)
     patch_pos_embed = patch_pos_embed.permute(0, 3, 1, 2)
 
     patch_pos_embed = nn.functional.interpolate(

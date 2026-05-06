@@ -1,8 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-
+#
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# ===================================================================
+# Note: This file is copied and adapted from the Show-o2 repository.
+# ===================================================================
 
 # pyre-unsafe
 from __future__ import annotations
@@ -478,9 +482,7 @@ def apply_rotary_emb(
     freqs_cis: Union[torch.Tensor, Tuple[torch.Tensor]],
 ) -> torch.Tensor:
     x_ = x.float().reshape(*x.shape[:-1], -1, 1, 2)
-    x_out = (
-        freqs_cis[..., 0] * x_[..., 0] + freqs_cis[..., 1] * x_[..., 1]
-    )
+    x_out = freqs_cis[..., 0] * x_[..., 0] + freqs_cis[..., 1] * x_[..., 1]
     return x_out.reshape(*x.shape).type_as(x)
 
 

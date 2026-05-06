@@ -3,6 +3,10 @@
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# ===================================================================
+# Note: This file is copied and adapted from the Show-o2 repository.
+# ===================================================================
 
 # coding=utf-8
 # pyre-unsafe
@@ -15,7 +19,6 @@ import numpy as np
 import torch
 from einops import rearrange
 from PIL import Image
-
 from tuna.models.misc import prepare_gen_input, prepare_gen_input_edit
 from tuna.pipelines._common import denorm
 from tuna.pipelines._pipeline_base import TunaPipelineBase
@@ -48,22 +51,18 @@ def get_hyper_params(
         height = 512
     latent_width = width // 16
     latent_height = height // 16
-    num_image_tokens = (
-        latent_width * latent_height + int(add_aspect_ratio_embeds) * 2 + 1
-    )
+    num_image_tokens = latent_width * latent_height + int(add_aspect_ratio_embeds) * 2 + 1
     num_video_tokens = (
-        latent_width * latent_height * latent_frames
-        + int(add_aspect_ratio_embeds) * 2
-        + 1
+        latent_width * latent_height * latent_frames + int(add_aspect_ratio_embeds) * 2 + 1
     )
     if generation_mode == "t2i":
         calculated_seq_len = (
             latent_width * latent_height * 1 + int(add_aspect_ratio_embeds) * 2 + 1024
         )
-        # Choose between 2048 or 5129 based on which is closer to calculated value
+        # Choose between 2048 or 5120 based on which is closer to calculated value
         diff_2048 = abs(calculated_seq_len - 2048)
-        diff_5129 = abs(calculated_seq_len - 5129)
-        max_seq_len = 2048 if diff_2048 <= diff_5129 else 5129
+        diff_5120 = abs(calculated_seq_len - 5120)
+        max_seq_len = 2048 if diff_2048 <= diff_5120 else 5120
         max_text_len = (
             max_seq_len - num_image_tokens - 33
             if use_chat_template
@@ -75,10 +74,10 @@ def get_hyper_params(
         calculated_seq_len = (
             latent_width * latent_height * 1 + int(add_aspect_ratio_embeds) * 2 + 1024
         )
-        # Choose between 2048 or 5129 based on which is closer to calculated value
+        # Choose between 2048 or 5120 based on which is closer to calculated value
         diff_2048 = abs(calculated_seq_len - 2048)
-        diff_5129 = abs(calculated_seq_len - 5129)
-        max_seq_len = 2048 if diff_2048 <= diff_5129 else 5129
+        diff_5120 = abs(calculated_seq_len - 5120)
+        max_seq_len = 2048 if diff_2048 <= diff_5120 else 5120
         max_text_len = (
             max_seq_len - num_image_tokens - 33
             if use_chat_template
@@ -406,9 +405,7 @@ class Tuna2PixelPipeline(TunaPipelineBase):
             pixel_values = pixel_values.to(self.device, self.weight_dtype)
             clean_image_embeds = self.model.prepare_clean_image_embeds(pixel_values)
             if guidance_scale > 0:
-                clean_image_embeds = torch.cat(
-                    [clean_image_embeds, clean_image_embeds], dim=0
-                )
+                clean_image_embeds = torch.cat([clean_image_embeds, clean_image_embeds], dim=0)
 
         model_kwargs = {
             "text_tokens": text_tokens,
@@ -424,9 +421,7 @@ class Tuna2PixelPipeline(TunaPipelineBase):
         }
 
         # Sample using transport
-        samples = sample_fn(
-            z, self.model.tuna_model.t2i_generate, **model_kwargs
-        )[-1]
+        samples = sample_fn(z, self.model.tuna_model.t2i_generate, **model_kwargs)[-1]
 
         # Handle classifier-free guidance
         if guidance_scale > 0:
@@ -558,9 +553,7 @@ class Tuna2PixelPipeline(TunaPipelineBase):
             "image_edit_original": image_latents[0:1].repeat(2, 1, 1, 1, 1),
         }
 
-        samples = sample_fn(
-            z, self.model.tuna_model.t2i_generate_edit, **model_kwargs
-        )[-1]
+        samples = sample_fn(z, self.model.tuna_model.t2i_generate_edit, **model_kwargs)[-1]
 
         if guidance_scale > 0:
             samples = torch.chunk(samples, 2)[0]
@@ -601,15 +594,10 @@ class Tuna2PixelPipeline(TunaPipelineBase):
             pil_images = [Image.fromarray(image) for image in images]
             return pil_images
         else:
-            images = torch.clamp((images + 1.0) / 2.0, min=0.0, max=1.0).to(
-                torch.float32
-            )
+            images = torch.clamp((images + 1.0) / 2.0, min=0.0, max=1.0).to(torch.float32)
             images *= 255.0
-            images = (
-                images.permute(0, 2, 3, 4, 1).cpu().numpy().astype(np.uint8)
-            )  # [B, T, H, W, C]
+            images = images.permute(0, 2, 3, 4, 1).cpu().numpy().astype(np.uint8)  # [B, T, H, W, C]
 
             frames = [images]
 
             return frames
-

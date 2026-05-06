@@ -60,7 +60,7 @@ def get_hyper_params(
         calculated_seq_len = (
             latent_width * latent_height * 1 + int(add_aspect_ratio_embeds) * 2 + 1024
         )
-        # Choose between 2048 or 5129 based on which is closer to calculated value
+        # Choose between 2048 or 5120 based on which is closer to calculated value
         max_seq_len = 8192
         max_text_len = (
             max_seq_len - num_image_tokens - 33
@@ -74,8 +74,8 @@ def get_hyper_params(
             latent_width * latent_height * 1 + int(add_aspect_ratio_embeds) * 2 + 1024
         )
         diff_2048 = abs(calculated_seq_len - 2048)
-        diff_5129 = abs(calculated_seq_len - 8192)
-        max_seq_len = 2048 if diff_2048 <= diff_5129 else 8192
+        diff_5120 = abs(calculated_seq_len - 8192)
+        max_seq_len = 2048 if diff_2048 <= diff_5120 else 8192
         max_text_len = (
             max_seq_len - num_image_tokens - 33
             if use_chat_template
@@ -621,4 +621,3 @@ class TunaPipeline(TunaPipelineBase):
             frames = [images]
 
             return frames
-

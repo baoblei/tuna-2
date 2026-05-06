@@ -1,8 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-
+#
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# ===================================================================
+# Note: This file is copied and adapted from the Show-o2 repository.
+# ===================================================================
 
 # coding=utf-8
 from __future__ import annotations

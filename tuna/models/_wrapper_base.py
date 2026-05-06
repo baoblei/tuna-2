@@ -1,9 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 """Shared base + mixins for the three Tuna wrapper classes.
 
 `TunaWrapperBase` owns the methods that are byte-for-byte identical across
@@ -17,6 +11,8 @@ The aim is to eliminate ~150 lines of duplication while keeping each
 variant's surprising behavior (variant init, build_models specifics,
 forward(batch) plumbing) in its own module.
 """
+
+# (c) Meta Platforms, Inc. and affiliates. Apache-2.0.
 
 from __future__ import annotations
 

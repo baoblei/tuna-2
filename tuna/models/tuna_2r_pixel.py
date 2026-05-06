@@ -3,6 +3,10 @@
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# ===================================================================
+# Note: This file is copied and adapted from the Show-o2 repository.
+# ===================================================================
 
 # coding=utf-8
 # pyre-unsafe
@@ -94,9 +98,7 @@ class Tuna2RPixel(SiglipMixin, TunaInnerBase):
         if init_llm_from_config:
             self.tuna = Qwen2ForCausalLM(llm_config)
         else:
-            self.tuna = Qwen2ForCausalLM.from_pretrained(
-                llm_model_path, attn_implementation="sdpa"
-            )
+            self.tuna = Qwen2ForCausalLM.from_pretrained(llm_model_path, attn_implementation="sdpa")
         self.tuna.resize_token_embeddings(llm_vocab_size)
 
         # Vision encoder — bare SigLIP transformer (no outer wrapper layer in
@@ -131,9 +133,7 @@ class Tuna2RPixel(SiglipMixin, TunaInnerBase):
                 if k in own_sd and own_sd[k].shape == v.shape
             }
             self.vision_model.load_state_dict(warm, strict=False)
-            logger.info(
-                f"SigLIP warm-init: loaded {len(warm)}/{len(own_sd)} matching keys"
-            )
+            logger.info(f"SigLIP warm-init: loaded {len(warm)}/{len(own_sd)} matching keys")
             del pretrained
         except Exception as e:
             logger.warning(f"Could not warm-init SigLIP from pretrained: {e}")
@@ -161,9 +161,7 @@ class Tuna2RPixel(SiglipMixin, TunaInnerBase):
         )
         self.time_embed = TimestepEmbedder(self.diffusion_head_config.hidden_size)
         if add_aspect_ratio_embeds:
-            self.aspect_ratio_embed = TimestepEmbedder(
-                self.diffusion_head_config.hidden_size
-            )
+            self.aspect_ratio_embed = TimestepEmbedder(self.diffusion_head_config.hidden_size)
         if hidden_size != self.diffusion_head_config.hidden_size:
             self.diff_proj = nn.Sequential(
                 nn.Linear(hidden_size, self.diffusion_head_config.hidden_size),
@@ -173,13 +171,9 @@ class Tuna2RPixel(SiglipMixin, TunaInnerBase):
                     self.diffusion_head_config.hidden_size,
                 ),
             )
-            self.time_embed_proj = nn.Linear(
-                self.diffusion_head_config.hidden_size, hidden_size
-            )
+            self.time_embed_proj = nn.Linear(self.diffusion_head_config.hidden_size, hidden_size)
             if add_aspect_ratio_embeds:
-                self.ar_embed_proj = nn.Linear(
-                    self.diffusion_head_config.hidden_size, hidden_size
-                )
+                self.ar_embed_proj = nn.Linear(self.diffusion_head_config.hidden_size, hidden_size)
         self.diffusion_head_a = nn.ModuleList(
             [
                 ModulatedAttentionBlock(self.diffusion_head_config, layer_idx)
@@ -279,9 +273,9 @@ class Tuna2RPixel(SiglipMixin, TunaInnerBase):
                 img_offset = modality_positions[i][0][0]
                 replace_start = img_offset - clean_seq_len - 1
                 if replace_start >= 0:
-                    input_embeds[
-                        i, replace_start : replace_start + clean_seq_len, :
-                    ] = clean_image_embeds[i].to(dtype)
+                    input_embeds[i, replace_start : replace_start + clean_seq_len, :] = (
+                        clean_image_embeds[i].to(dtype)
+                    )
 
         (
             image_embeds,
@@ -378,23 +372,17 @@ class Tuna2RPixel(SiglipMixin, TunaInnerBase):
             act.append(last_hidden_states)
 
         # Predict x0 (clean image) directly - JiT style
-        x0_pred = self.diffusion_head_b(
-            last_hidden_states, time_embeds, modality_positions
-        )
+        x0_pred = self.diffusion_head_b(last_hidden_states, time_embeds, modality_positions)
         loss_disp = torch.tensor(0.0, device=device)
         if image_latents is None:
-            loss_ntp = next_token_prediction(
-                logits, text_labels, self.config.llm_vocab_size
-            )
+            loss_ntp = next_token_prediction(logits, text_labels, self.config.llm_vocab_size)
             loss_flow = torch.tensor(0.0, device=device)
             return logits, loss_ntp, loss_flow, loss_disp
 
         if text_labels is not None and image_labels is not None:
             from tuna.models.misc import jit_x0_prediction_loss
 
-            loss_ntp = next_token_prediction(
-                logits, text_labels, self.config.llm_vocab_size
-            )
+            loss_ntp = next_token_prediction(logits, text_labels, self.config.llm_vocab_size)
             # JiT-style loss: directly predict clean images (x0)
             # For interleaved multi-image data (e.g. edit_interleaved), t has one
             # entry per image (b*n) but x0_pred is per-sequence (b).
@@ -638,12 +626,8 @@ class Tuna2RPixel(SiglipMixin, TunaInnerBase):
         """
         input_dim = model_pred_cfg.ndim
 
-        cond_pred_norm = model_pred_cond.norm(
-            p=2, dim=list(range(1, input_dim)), keepdim=True
-        )
-        cfg_pred_norm = model_pred_cfg.norm(
-            p=2, dim=list(range(1, input_dim)), keepdim=True
-        )
+        cond_pred_norm = model_pred_cond.norm(p=2, dim=list(range(1, input_dim)), keepdim=True)
+        cfg_pred_norm = model_pred_cfg.norm(p=2, dim=list(range(1, input_dim)), keepdim=True)
         normalization_scale = cond_pred_norm / cfg_pred_norm
         normalization_scale[normalization_scale >= self.ada_norm_cfg_feat_thre] = 1.0
         return normalization_scale * model_pred_cfg
@@ -707,6 +691,7 @@ class Tuna2RPixel(SiglipMixin, TunaInnerBase):
             v_cond, v_uncond = torch.chunk(v, 2)
             v = v_uncond + guidance_scale * (v_cond - v_uncond)
             return torch.cat([v, v], dim=0)
+
 
 class Tuna2RPixelModel(JiTWrapperMixin, TunaWrapperBase):
     """High-level training wrapper for :class:`Tuna2RPixel` (variant B).
@@ -915,9 +900,7 @@ class Tuna2RPixelModel(JiTWrapperMixin, TunaWrapperBase):
                 if k in model_dict and v.shape == model_dict[k].shape
             }
 
-            logger.info(
-                f"Loaded {len(filtered_dict)} / {len(model_dict)} keys from checkpoint."
-            )
+            logger.info(f"Loaded {len(filtered_dict)} / {len(model_dict)} keys from checkpoint.")
 
             self.tuna_model.load_state_dict(filtered_dict, strict=False)
         self._freeze_params(self.tuna_model, self.frozen_params)

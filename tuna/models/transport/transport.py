@@ -1,8 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-
+#
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# ===================================================================
+# Note: This file is copied and adapted from the Show-o2 repository.
+# ===================================================================
 
 # pyre-unsafe
 import enum
@@ -11,7 +15,6 @@ from typing import Any, Callable
 
 import numpy as np
 import torch as th
-
 from tuna.models.transport import path
 from tuna.models.transport.integrators import ode, sde
 from tuna.models.transport.utils import mean_flat
@@ -262,7 +265,9 @@ class Sampler:
         self.drift = self.transport.get_drift()
         self.score = self.transport.get_score()
 
-    def __get_sde_diffusion_and_drift(self, *, diffusion_form="SBDM", diffusion_norm=1.0):
+    def __get_sde_diffusion_and_drift(
+        self, *, diffusion_form="SBDM", diffusion_norm=1.0
+    ):
         def diffusion_fn(x, t):
             return self.transport.path_sampler.compute_diffusion(
                 x, t, form=diffusion_form, norm=diffusion_norm

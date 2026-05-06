@@ -3,6 +3,10 @@
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# ===================================================================
+# Note: This file is copied and adapted from the Show-o2 repository.
+# ===================================================================
 
 # coding=utf-8
 # pyre-unsafe
@@ -83,9 +87,7 @@ class Tuna2Pixel(TunaInnerBase):
         if init_llm_from_config:
             self.tuna = Qwen2ForCausalLM(llm_config)
         else:
-            self.tuna = Qwen2ForCausalLM.from_pretrained(
-                llm_model_path, attn_implementation="sdpa"
-            )
+            self.tuna = Qwen2ForCausalLM.from_pretrained(llm_model_path, attn_implementation="sdpa")
         self.tuna.resize_token_embeddings(llm_vocab_size)
 
         # Simple vision encoder: Conv2d patchify only (no SigLIP).
@@ -111,9 +113,7 @@ class Tuna2Pixel(TunaInnerBase):
         )
         self.time_embed = TimestepEmbedder(self.diffusion_head_config.hidden_size)
         if add_aspect_ratio_embeds:
-            self.aspect_ratio_embed = TimestepEmbedder(
-                self.diffusion_head_config.hidden_size
-            )
+            self.aspect_ratio_embed = TimestepEmbedder(self.diffusion_head_config.hidden_size)
         if hidden_size != self.diffusion_head_config.hidden_size:
             self.diff_proj = nn.Sequential(
                 nn.Linear(hidden_size, self.diffusion_head_config.hidden_size),
@@ -123,13 +123,9 @@ class Tuna2Pixel(TunaInnerBase):
                     self.diffusion_head_config.hidden_size,
                 ),
             )
-            self.time_embed_proj = nn.Linear(
-                self.diffusion_head_config.hidden_size, hidden_size
-            )
+            self.time_embed_proj = nn.Linear(self.diffusion_head_config.hidden_size, hidden_size)
             if add_aspect_ratio_embeds:
-                self.ar_embed_proj = nn.Linear(
-                    self.diffusion_head_config.hidden_size, hidden_size
-                )
+                self.ar_embed_proj = nn.Linear(self.diffusion_head_config.hidden_size, hidden_size)
         self.diffusion_head_a = nn.ModuleList(
             [
                 ModulatedAttentionBlock(self.diffusion_head_config, layer_idx)
@@ -226,9 +222,9 @@ class Tuna2Pixel(TunaInnerBase):
                 img_offset = modality_positions[i][0][0]
                 replace_start = img_offset - clean_seq_len - 1
                 if replace_start >= 0:
-                    input_embeds[
-                        i, replace_start : replace_start + clean_seq_len, :
-                    ] = clean_image_embeds[i].to(dtype)
+                    input_embeds[i, replace_start : replace_start + clean_seq_len, :] = (
+                        clean_image_embeds[i].to(dtype)
+                    )
 
         (
             image_embeds,
@@ -318,23 +314,17 @@ class Tuna2Pixel(TunaInnerBase):
             act.append(last_hidden_states)
 
         # Predict x0 (clean image) directly - JiT style
-        x0_pred = self.diffusion_head_b(
-            last_hidden_states, time_embeds, modality_positions
-        )
+        x0_pred = self.diffusion_head_b(last_hidden_states, time_embeds, modality_positions)
         loss_disp = torch.tensor(0.0, device=device)
         if image_latents is None:
-            loss_ntp = next_token_prediction(
-                logits, text_labels, self.config.llm_vocab_size
-            )
+            loss_ntp = next_token_prediction(logits, text_labels, self.config.llm_vocab_size)
             loss_flow = torch.tensor(0.0, device=device)
             return logits, loss_ntp, loss_flow, loss_disp
 
         if text_labels is not None and image_labels is not None:
             from tuna.models.misc import jit_x0_prediction_loss
 
-            loss_ntp = next_token_prediction(
-                logits, text_labels, self.config.llm_vocab_size
-            )
+            loss_ntp = next_token_prediction(logits, text_labels, self.config.llm_vocab_size)
             # JiT-style loss: directly predict clean images (x0)
             if t.shape[0] == x0_pred.shape[0]:
                 t_for_loss = t
@@ -602,6 +592,7 @@ class Tuna2Pixel(TunaInnerBase):
             v = v_uncond + guidance_scale * (v_cond - v_uncond)
             return torch.cat([v, v], dim=0)
 
+
 class Tuna2PixelModel(JiTWrapperMixin, TunaWrapperBase):
     """High-level training wrapper for :class:`Tuna2Pixel` (variant C).
 
@@ -791,9 +782,7 @@ class Tuna2PixelModel(JiTWrapperMixin, TunaWrapperBase):
                 if k in model_dict and v.shape == model_dict[k].shape
             }
 
-            logger.info(
-                f"Loaded {len(filtered_dict)} / {len(model_dict)} keys from checkpoint."
-            )
+            logger.info(f"Loaded {len(filtered_dict)} / {len(model_dict)} keys from checkpoint.")
 
             self.tuna_model.load_state_dict(filtered_dict, strict=False)
         self._freeze_params(self.tuna_model, self.frozen_params)
@@ -820,9 +809,7 @@ class Tuna2PixelModel(JiTWrapperMixin, TunaWrapperBase):
         )
 
     @torch.no_grad()
-    def prepare_clean_image_embeds(
-        self, pixel_values_low: torch.Tensor
-    ) -> torch.Tensor:
+    def prepare_clean_image_embeds(self, pixel_values_low: torch.Tensor) -> torch.Tensor:
         """Encode degraded/low-res images through the patch embedding to get
         clean image embeddings used for reconstruction conditioning."""
         if len(pixel_values_low.shape) == 4:
