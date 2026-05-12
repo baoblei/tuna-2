@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tuna 数据处理流程 & 返回结构可视化</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #161822;
+    --surface2: #1e2030;
+    --border: #2a2d3e;
+    --text: #c9d1d9;
+    --text2: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --orange: #db6d28;
+    --red: #f85149;
+    --purple: #a371f7;
+    --pink: #db61a2;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height:1.5;
+    padding: 0;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a1c2e 0%, #1e2030 50%, #1a1c2e 100%);
+    border-bottom: 1px solid var(--border); padding: 32px 48px; text-align: center;
+  }
+  .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .header p { color: var(--text2); font-size: 14px; }
+  .tabs {
+    display: flex; gap: 2px; background: var(--surface); padding: 8px 48px 0;
+    border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100;
+  }
+  .tab {
+    padding: 10px 20px; border-radius: 8px 8px 0 0; cursor: pointer;
+    font-size: 14px; font-weight: 500; color: var(--text2); border: 1px solid transparent;
+    border-bottom: none; transition: all 0.2s;
+  }
+  .tab:hover { color: var(--text); background: var(--surface2); }
+  .tab.active { color: var(--accent); background: var(--bg); border-color: var(--border); }
+  .content { max-width: 1400px; margin: 0 auto; padding: 32px 48px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* Cards */
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; margin-bottom: 24px;
+  }
+  .card h3 { font-size: 18px; margin-bottom: 16px; color: var(--accent); }
+  .card h4 { font-size: 14px; margin-bottom: 10px; color: var(--yellow); }
+
+  /* Flow Diagram */
+  .flow { display:flex; flex-direction:column; gap:16px; }
+  .flow-row { display:flex; align-items:stretch; gap:16px; justify-content:center; flex-wrap:wrap; }
+  .flow-node {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 22px; flex: 1; min-width: 180px; max-width: 320px;
+    position: relative; transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .flow-node:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(88,166,255,0.1); }
+  .flow-node.source { border-color: var(--green); }
+  .flow-node.dataset { border-color: var(--accent); }
+  .flow-node.transform { border-color: var(--purple); }
+  .flow-node.token { border-color: var(--orange); }
+  .flow-node.output { border-color: var(--pink); }
+  .flow-node h4 { font-size:13px; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+  .flow-node .badge {
+    font-size:10px; padding:2px 8px; border-radius:10px; font-weight:600;
+    text-transform: uppercase;
+  }
+  .badge.src { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge.ds  { background: rgba(88,166,255,0.15); color: var(--accent); }
+  .badge.tr  { background: rgba(163,113,247,0.15); color: var(--purple); }
+  .badge.tok { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .badge.out { background: rgba(219,97,162,0.15); color: var(--pink); }
+  .flow-node .desc { font-size:12px; color: var(--text2); }
+  .flow-node ul { margin: 8px 0 0 16px; font-size:12px; color: var(--text2); }
+  .flow-node ul li { margin-bottom: 4px; }
+  .arrow-down {
+    display:flex; justify-content:center; padding: 4px 0; color: var(--text2);
+    font-size: 20px;
+  }
+  .arrow-right {
+    display:flex; align-items:center; color: var(--text2); font-size: 18px;
+    min-width: 24px;
+  }
+
+  /* Sequence visual */
+  .seq-viz {
+    display: flex; gap: 2px; flex-wrap: wrap; align-items:center;
+    font-family: 'SF Mono', 'Consolas', monospace; font-size: 11px;
+    padding: 16px; background: var(--bg); border-radius: 8px; overflow-x: auto;
+  }
+  .seq-token {
+    padding: 4px 8px; border-radius: 4px; white-space: nowrap;
+    font-weight: 600;
+  }
+  .seq-token.bos { background: rgba(88,166,255,0.2); color: var(--accent); }
+  .seq-token.eos { background: rgba(88,166,255,0.2); color: var(--accent); }
+  .seq-token.boi { background: rgba(63,185,80,0.2); color: var(--green); }
+  .seq-token.eoi { background: rgba(63,185,80,0.2); color: var(--green); }
+  .seq-token.img { background: rgba(163,113,247,0.2); color: var(--purple); }
+  .seq-token.text { background: rgba(219,97,162,0.15); color: var(--pink); }
+  .seq-token.loss { background: rgba(248,81,73,0.15); color: var(--red); }
+  .seq-token.prompt { background: rgba(210,153,34,0.15); color: var(--yellow); }
+
+  /* Code */
+  pre.code {
+    background: var(--bg); border-radius: 8px; padding: 16px; overflow-x: auto;
+    font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px;
+    border: 1px solid var(--border); color: var(--text); margin-top: 8px;
+  }
+  pre.code .k { color: var(--pink); }
+  pre.code .s { color: var(--green); }
+  pre.code .c { color: var(--text2); }
+  pre.code .n { color: var(--accent); }
+
+  /* Tables */
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:12px; }
+  th { background:var(--surface2); color:var(--accent); padding:10px 14px; text-align:left;
+       font-weight:600; border-bottom:2px solid var(--border); }
+  td { padding:10px 14px; border-bottom:1px solid var(--border); color:var(--text); }
+  tr:hover td { background:rgba(88,166,255,0.03); }
+
+  /* Legend */
+  .legend { display:flex; gap:20px; flex-wrap:wrap; margin:16px 0; }
+  .legend span { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text2); }
+  .legend .swatch { width:14px; height:14px; border-radius:3px; }
+
+  /* Two column */
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+  @media(max-width:900px) { .two-col { grid-template-columns:1fr; } }
+
+  /* Highlight box */
+  .highlight {
+    background: rgba(88,166,255,0.05); border: 1px solid rgba(88,166,255,0.2);
+    border-radius: 8px; padding: 14px; margin: 12px 0; font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🐟 Tuna 数据处理流程 & 返回结构</h1>
+  <p>涵盖数据集、图像变换、Token化、采样策略、训练/推理管线的完整数据流</p>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('overview')">全景概览</div>
+  <div class="tab" onclick="switchTab('datasets')">数据集详解</div>
+  <div class="tab" onclick="switchTab('sequences')">统一序列结构</div>
+  <div class="tab" onclick="switchTab('training')">训练数据流</div>
+  <div class="tab" onclick="switchTab('inference')">推理数据流</div>
+  <div class="tab" onclick="switchTab('returns')">返回结构总览</div>
+</div>
+
+<div class="content">
+
+<!-- ================================================================== -->
+<!-- PANEL: Overview -->
+<!-- ================================================================== -->
+<div id="panel-overview" class="panel active">
+  <div class="card">
+    <h3>📦 数据系统全景图</h3>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--green)"></span> 数据源（JSONL）</span>
+      <span><span class="swatch" style="background:var(--accent)"></span> Dataset 处理</span>
+      <span><span class="swatch" style="background:var(--purple)"></span> 图像变换</span>
+      <span><span class="swatch" style="background:var(--yellow)"></span> Token化/序列格式化</span>
+      <span><span class="swatch" style="background:var(--pink)"></span> 输出 Batch</span>
+    </div>
+  </div>
+
+  <div class="flow">
+
+    <!-- Row: Data sources -->
+    <div class="flow-row">
+      <div class="flow-node source">
+        <h4><span class="badge src">JSONL</span> T2I / Caption 格式</h4>
+        <div class="desc">{"image": "imgs/001.jpg", "caption": "a cat"}</div>
+      </div>
+      <div class="flow-node source">
+        <h4><span class="badge src">JSONL</span> Conversation 格式</h4>
+        <div class="desc">{"image": "...", "conversations": [{from:"human", value:"..."}, {from:"gpt", value:"..."}]}</div>
+      </div>
+      <div class="flow-node source">
+        <h4><span class="badge src">JSONL</span> Edit 格式</h4>
+        <div class="desc">{"raw_image": "...", "out_image": "...", "instruction": "make it sunset"}</div>
+      </div>
+      <div class="flow-node source">
+        <h4><span class="badge src">JSONL</span> Video 格式</h4>
+        <div class="desc">{"video": "clip.mp4", "caption": "a panda drinking coffee"}</div>
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <!-- Row: Datasets -->
+    <div class="flow-row">
+      <div class="flow-node dataset">
+        <h4><span class="badge ds">TIDataset</span> Text-Image Dataset</h4>
+        <ul>
+          <li>data_type: "t2i" | "mmu" | "mmu_text"</li>
+          <li>Multi-resolution AR bucketing</li>
+          <li>Chat template 展开</li>
+          <li>Auto image transform</li>
+        </ul>
+      </div>
+      <div class="flow-node dataset">
+        <h4><span class="badge ds">EditDataset</span> Image Editing</h4>
+        <ul>
+          <li>加载 raw_image + out_image</li>
+          <li>双图像 transform</li>
+          <li>Tokenize instruction</li>
+          <li>image_mask 仅标记 target</li>
+        </ul>
+      </div>
+      <div class="flow-node dataset">
+        <h4><span class="badge ds">VideoDataset</span> Video-Text</h4>
+        <ul>
+          <li>OpenCV 解码 / 帧目录</li>
+          <li>均匀采样 num_frames</li>
+          <li>Stack → [C,T,H,W]</li>
+          <li>Wan2.2 VAE latent 计算</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <!-- Row: Transforms -->
+    <div class="flow-row">
+      <div class="flow-node transform">
+        <h4><span class="badge tr">Transform</span> build_image_transform</h4>
+        <ul>
+          <li>Resize (短边对齐, BICUBIC)</li>
+          <li>CenterCrop → (H, W)</li>
+          <li>ToTensor → [0, 1]</li>
+          <li>Normalize → [-1, 1]</li>
+        </ul>
+      </div>
+      <div class="flow-node transform">
+        <h4><span class="badge tr">Transform</span> build_siglip_transform</h4>
+        <ul>
+          <li>SigLIP2 AutoProcessor</li>
+          <li>pixel_values (3, H, W)</li>
+          <li>pixel_attention_mask</li>
+          <li>spatial_shapes (Hp, Wp)</li>
+        </ul>
+      </div>
+      <div class="flow-node transform">
+        <h4><span class="badge tr">Sampler</span> AR Bucket + Weighted</h4>
+        <ul>
+          <li>AspectRatioBucketSampler</li>
+          <li>WeightedDataLoaderSampler</li>
+          <li>MultiResolutionIterator</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <!-- Row: Tokenize -->
+    <div class="flow-row">
+      <div class="flow-node token">
+        <h4><span class="badge tok">Token</span> T2I 序列</h4>
+        <div class="highlight">[bos][text][boi][img*N][eoi][eos]</div>
+        <div class="desc">text_labels 全 -100（仅条件）</div>
+      </div>
+      <div class="flow-node token">
+        <h4><span class="badge tok">Token</span> MMU 序列</h4>
+        <div class="highlight">[bos][boi][img*N][eoi][prompt][response][eos]</div>
+        <div class="desc">仅 response 参与 LM loss</div>
+      </div>
+      <div class="flow-node token">
+        <h4><span class="badge tok">Token</span> EDIT 序列</h4>
+        <div class="highlight">[bos][boi][img*N][eoi][text][boi][img*N][eoi][eos]</div>
+        <div class="desc">image_mask 仅目标图像</div>
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <!-- Row: Output -->
+    <div class="flow-row">
+      <div class="flow-node output">
+        <h4><span class="badge out">Batch</span> 训练时返回结构</h4>
+        <ul>
+          <li>images: Tensor</li>
+          <li>text_tokens / text_labels</li>
+          <li>text_masks / image_masks</li>
+          <li>modality_positions</li>
+          <li>images_clip (SigLIP)</li>
+          <li>data_type / sentence</li>
+        </ul>
+      </div>
+      <div class="flow-node output">
+        <h4><span class="badge out">Loss</span> 模型输出</h4>
+        <ul>
+          <li>loss（总 loss）</li>
+          <li>loss_ntp（LM loss）</li>
+          <li>loss_flow（扩散/流 loss）</li>
+          <li>loss_disp（显示用）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- PANEL: Datasets -->
+<!-- ================================================================== -->
+<div id="panel-datasets" class="panel">
+  <div class="card">
+    <h3>📂 TIDataset — 文本-图像数据集（最核心）</h3>
+
+    <h4>支持的 JSONL 格式</h4>
+    <div class="two-col">
+      <div>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:8px">Caption 模式（T2I / 单轮标注）</p>
+        <pre class="code"><span class="c"># data_type = "t2i"</span>
+{<span class="s">"image"</span>: <span class="s">"imgs/000.jpg"</span>, <span class="s">"caption"</span>: <span class="s">"a photo of a cat"</span>}</pre>
+      </div>
+      <div>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:8px">Conversation 模式（多轮理解/对话）</p>
+        <pre class="code"><span class="c"># data_type = "mmu"</span>
+{<span class="s">"image"</span>: <span class="s">"imgs/000.jpg"</span>,
+ <span class="s">"conversations"</span>: [
+   {<span class="s">"from"</span>: <span class="s">"human"</span>, <span class="s">"value"</span>: <span class="s">"What's in this image?"</span>},
+   {<span class="s">"from"</span>: <span class="s">"gpt"</span>,   <span class="s">"value"</span>: <span class="s">"A cat."</span>}
+ ]}</pre>
+      </div>
+    </div>
+
+    <h4 style="margin-top:20px">__getitem__ 处理流程</h4>
+    <div class="flow" style="margin-top:12px">
+      <div class="flow-row">
+        <div class="flow-node" style="border-color:var(--accent);flex:1;max-width:none;">
+          <h4>Step 1: 加载图像</h4>
+          <ul>
+            <li>从 image_root + image_field 解析路径</li>
+            <li>PIL.Image.open() → RGB 转换</li>
+            <li>Multi-resolution: 按原图 AR 选最佳 bucket</li>
+            <li>build_image_transform → (3, H, W) in [-1, 1]</li>
+          </ul>
+        </div>
+        <div class="flow-node" style="border-color:var(--orange);flex:1;max-width:none;">
+          <h4>Step 2: 文本提取 & Token化</h4>
+          <ul>
+            <li>Caption 模式: 直接取 caption 字段</li>
+            <li>Conversation 模式 → t2i: 取最后 human turn</li>
+            <li>Conversation 模式 → mmu: 取最后 assistant turn</li>
+            <li>Chat template: tokenizer.apply_chat_template()</li>
+            <li>普通模式: tokenizer(text) → input_ids</li>
+          </ul>
+        </div>
+      </div>
+      <div class="flow-row" style="margin-top:12px">
+        <div class="flow-node" style="border-color:var(--yellow);flex:1;max-width:none;">
+          <h4>Step 3: 统一序列格式化</h4>
+          <ul>
+            <li>t2i → format_sequence_gen_qwen2_5()</li>
+            <li>mmu → format_sequence_und()</li>
+            <li>输出: tt, tl, mp, tm, im 五个张量</li>
+            <li>pad_id 补齐到 max_text_length</li>
+          </ul>
+        </div>
+        <div class="flow-node" style="border-color:var(--pink);flex:1;max-width:none;">
+          <h4>Step 4: 构建 images_clip</h4>
+          <ul>
+            <li>有 SigLIP: siglip_transform → pixel_values + attention_mask + spatial_shapes</li>
+            <li>无 SigLIP: clip_image_transform → (3, 384, 384)</li>
+            <li>纯文本样本: zeros 张量</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>✂️ EditDataset — 图像编辑数据集</h3>
+    <pre class="code"><span class="c"># JSONL 格式</span>
+{<span class="s">"raw_image"</span>: <span class="s">"imgs/000.jpg"</span>,
+ <span class="s">"out_image"</span>: <span class="s">"imgs/000_edit.jpg"</span>,
+ <span class="s">"instruction"</span>: <span class="s">"make it sunset"</span>}</pre>
+    <div class="flow" style="margin-top:16px">
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4>处理过程</h4>
+          <ul>
+            <li>加载 raw_pil + out_pil 两张图</li>
+            <li>分别 image_transform → [-1, 1]</li>
+            <li>Tokenize instruction 文本</li>
+            <li>format_sequence_gen_qwen2_5_edit() → 双图序列</li>
+            <li>image_mask 仅在 target (第二) 图像上为 1</li>
+            <li>images 返回 torch.stack([raw, target]) → (2, 3, H, W)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>🎬 VideoDataset — 视频文本数据集</h3>
+    <pre class="code"><span class="c"># JSONL 格式: video 可以是视频文件或帧目录</span>
+{<span class="s">"video"</span>: <span class="s">"videos/clip.mp4"</span>, <span class="s">"caption"</span>: <span class="s">"a panda drinking coffee"</span>}</pre>
+    <table>
+      <tr><th>输入类型</th><th>处理方式</th></tr>
+      <tr><td>.mp4 / .avi / .mov / .mkv / .webm</td><td>OpenCV 解码, 均匀采样 num_frames 帧</td></tr>
+      <tr><td>帧目录 (frame_000.jpg, ...)</td><td>字母排序后均匀采样 num_frames 帧</td></tr>
+    </table>
+    <div class="highlight" style="margin-top:12px">
+      <strong>Latent 计算:</strong> Wan2.2 VAE 下采样 16× (空间) + 4× (时间, causal conv)。
+      num_image_tokens = (H/16) * (W/16) * latent_T + 1。images 形状 = [C, T, H, W]。
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- PANEL: Sequences -->
+<!-- ================================================================== -->
+<div id="panel-sequences" class="panel">
+  <div class="card">
+    <h3>🔤 统一序列（Unified Sequence）布局</h3>
+    <p style="color:var(--text2);margin-bottom:16px;">
+      所有模态（文本 + 图像）被拼接为单个 token 序列，由 Qwen2.5 自回归 backbone 统一处理。
+      图像部分通过 <code>modality_positions</code> 张量告知模型在哪里注入视觉特征。
+    </p>
+
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--accent)"></span> bos/eos</span>
+      <span><span class="swatch" style="background:var(--green)"></span> boi/eoi</span>
+      <span><span class="swatch" style="background:var(--purple)"></span> img_pad × N</span>
+      <span><span class="swatch" style="background:var(--pink)"></span> text_tokens</span>
+      <span><span class="swatch" style="background:var(--red)"></span> loss 目标</span>
+      <span><span class="swatch" style="background:var(--yellow)"></span> prompt (不参与loss)</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>📐 五个核心张量 (tt, tl, mp, tm, im) 详解</h3>
+    <p style="color:var(--text2);margin-bottom:12px">
+      所有 <code>format_sequence_*</code> 函数都返回这五个张量，在 Dataset 的 <code>__getitem__</code> 中被解包为
+      <code>tt, tl, mp, tm, im</code>，然后存入 dict 的 <code>text_tokens</code>, <code>text_labels</code>,
+      <code>modality_positions</code>, <code>text_masks</code>, <code>image_masks</code> 字段。
+    </p>
+    <table>
+      <tr><th>缩写</th><th>变量名</th><th>dict key</th><th>类型</th><th>形状</th><th>含义</th></tr>
+      <tr>
+        <td><code>tt</code></td>
+        <td>text_tokens</td>
+        <td><code>"text_tokens"</code></td>
+        <td>LongTensor</td>
+        <td>[max_seq_len]</td>
+        <td>完整的统一序列 token id，包含 bos/eos/boi/eoi/img_pad/text 所有 token，不足部分用 pad_id 补齐</td>
+      </tr>
+      <tr>
+        <td><code>tl</code></td>
+        <td>text_labels</td>
+        <td><code>"text_labels"</code></td>
+        <td>LongTensor</td>
+        <td>[max_seq_len]</td>
+        <td>LM 训练的标签序列，与 tt 等长。参与 loss 计算的位置 = 真实 token id，不参与的位置 = -100（PyTorch CrossEntropyLoss 默认 ignore_index）</td>
+      </tr>
+      <tr>
+        <td><code>mp</code></td>
+        <td>modality_positions</td>
+        <td><code>"modality_positions"</code></td>
+        <td>LongTensor</td>
+        <td>[num_images, 2]</td>
+        <td>每行 [start, length]，标记每段图像在 tt 序列中的起始位置和 img_pad token 数量。模型根据此信息在对应位置注入视觉特征（T2I: 1行, EDIT: 2行, MMU: 1行）</td>
+      </tr>
+      <tr>
+        <td><code>tm</code></td>
+        <td>text_mask</td>
+        <td><code>"text_masks"</code></td>
+        <td>BoolTensor</td>
+        <td>[max_seq_len]</td>
+        <td>标记哪些位置是"真正的文本 token"：1 = 文本 token（包括 bos/eos/boi/eoi/文字），0 = img_pad 或 pad。用于 attention 计算中区分文本和图像区域</td>
+      </tr>
+      <tr>
+        <td><code>im</code></td>
+        <td>image_mask</td>
+        <td><code>"image_masks"</code></td>
+        <td>BoolTensor</td>
+        <td>[max_seq_len]</td>
+        <td>标记哪些位置需要注入图像特征：1 = img_pad 位置，0 = 其他。EDIT 任务中<b>仅在 target 图像段</b>为 1（raw 图像作为条件输入，其 img_pad 为 0）</td>
+      </tr>
+    </table>
+
+    <h4 style="margin-top:20px">具体示例（T2I, N=256, 文本=10 tokens, max_seq_len=512）</h4>
+    <div class="highlight">
+      <strong>tt</strong> = [BOS, T₁, T₂, ..., T₁₀, BOI, PAD×256, EOI, EOS, PAD×242]<br>
+      <strong>tl</strong> = [-100, -100×10, -100, -100×256, -100, -100, -100×242] &nbsp;← 全部 -100（纯条件，不用 LM loss）<br>
+      <strong>mp</strong> = [[12, 256]] &nbsp;← 图像从位置 12 开始，共 256 token<br>
+      <strong>tm</strong> = [1, 1×10, 1, 0×256, 1, 1, 0×242] &nbsp;← img_pad 和 pad 位置为 0<br>
+      <strong>im</strong> = [0, 0×10, 0, 1×256, 0, 0, 0×242] &nbsp;← 仅 img_pad 位置为 1
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>🎨 T2I (Text-to-Image, Generation)</h3>
+    <p style="color:var(--text2);margin-bottom:12px">函数: <code>format_sequence_gen_qwen2_5()</code>, data_type="t2i"</p>
+    <div class="seq-viz">
+      <span class="seq-token bos">BOS</span>
+      <span class="seq-token text">Text Tokens</span>
+      <span class="seq-token boi">BOI</span>
+      <span class="seq-token img">IMG_PAD × N</span>
+      <span class="seq-token eoi">EOI</span>
+      <span class="seq-token eos">EOS</span>
+    </div>
+    <table style="margin-top:16px">
+      <tr><th>字段</th><th>含义</th><th>值</th></tr>
+      <tr><td>text_labels</td><td>全部 -100</td><td>text 不参与 LM loss，图像 loss 由 flow head 计算</td></tr>
+      <tr><td>image_mask</td><td>1 在 img_pad 位置</td><td>标记需要注入图像特征的 token 位</td></tr>
+      <tr><td>text_mask</td><td>1 在非 img_pad, 非 pad 位置</td><td>实际文本 token 位</td></tr>
+      <tr><td>modality_positions</td><td>[[start, len]]</td><td>[len(text)+2, N] — 图像在序列中的位置</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>🔍 MMU (Multimodal Understanding)</h3>
+    <p style="color:var(--text2);margin-bottom:12px">函数: <code>format_sequence_und()</code>, data_type="mmu"</p>
+    <div class="seq-viz">
+      <span class="seq-token bos">BOS</span>
+      <span class="seq-token boi">BOI</span>
+      <span class="seq-token img">IMG_PAD × N</span>
+      <span class="seq-token eoi">EOI</span>
+      <span class="seq-token prompt">Prompt Tokens</span>
+      <span class="seq-token loss">Response Tokens</span>
+      <span class="seq-token eos">EOS</span>
+    </div>
+    <div class="highlight">
+      <strong>Loss 掩码策略:</strong> 仅 Response Tokens 和 EOS 参与 LM loss 计算（text_labels != -100）。
+      Prompt 和图像部分被 mask 为 -100。
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>✂️ EDIT (Image Editing)</h3>
+    <p style="color:var(--text2);margin-bottom:12px">函数: <code>format_sequence_gen_qwen2_5_edit()</code>, data_type="edit_interleaved"</p>
+    <div class="seq-viz">
+      <span class="seq-token bos">BOS</span>
+      <span class="seq-token boi">BOI</span>
+      <span class="seq-token img">IMG_PAD × N (raw)</span>
+      <span class="seq-token eoi">EOI</span>
+      <span class="seq-token text">Instruction Tokens</span>
+      <span class="seq-token boi">BOI</span>
+      <span class="seq-token img">IMG_PAD × N (target)</span>
+      <span class="seq-token eoi">EOI</span>
+      <span class="seq-token eos">EOS</span>
+    </div>
+    <div class="highlight">
+      <strong>关键区别:</strong> image_mask 仅在 <strong>第二个</strong>图像段（target image）为 1。
+      第一个图像段（raw image）作为条件输入，其 img_pad 位置 image_mask=0。
+      modality_positions 包含两个条目: [[2, N], [len(text)+4+N, N]]。
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>💬 Conversation 变体</h3>
+    <table>
+      <tr><th>函数</th><th>用途</th><th>Loss 目标</th></tr>
+      <tr>
+        <td><code>format_conversation_und()</code></td>
+        <td>MMU + Chat Template</td>
+        <td>奇数轮 (assistant turns)</td>
+      </tr>
+      <tr>
+        <td><code>format_conversation_und_text()</code></td>
+        <td>纯文本对话 (无图像)</td>
+        <td>奇数轮 (assistant turns)</td>
+      </tr>
+      <tr>
+        <td><code>format_conversation_gen()</code></td>
+        <td>T2I + Chat Template</td>
+        <td>最后 assistant 文本 + trailing EOS</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- PANEL: Training -->
+<!-- ================================================================== -->
+<div id="panel-training" class="panel">
+  <div class="card">
+    <h3>🏋️ 训练数据流全景</h3>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node" style="border-color:var(--accent);flex:1;max-width:none;">
+          <h4>① 配置解析 (Hydra)</h4>
+          <ul>
+            <li><strong>单数据集模式:</strong> cfg.data._target_ → 1 个 Dataset → 1 个 DataLoader</li>
+            <li><strong>多流模式:</strong> cfg.data.streams + cfg.data.sampling_weights → N 个 DataLoader → WeightedDataLoaderSampler</li>
+          </ul>
+        </div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-node" style="border-color:var(--purple);flex:1;max-width:none;">
+          <h4>② Dataset.__getitem__() → Sample Dict</h4>
+          <ul>
+            <li>images: Tensor (3,H,W) 或 (2,3,H,W) edit 或 (C,T,H,W) video</li>
+            <li>text_tokens: LongTensor [max_seq_len]</li>
+            <li>text_labels: LongTensor [max_seq_len] (-100 掩码)</li>
+            <li>text_masks: BoolTensor [max_seq_len]</li>
+            <li>image_masks: BoolTensor [max_seq_len]</li>
+            <li>modality_positions: LongTensor [num_imgs, 2]</li>
+            <li>images_clip: Tensor (3, 384, 384) — 或 SigLIP 字段</li>
+            <li>data_type: str | sentence: str</li>
+          </ul>
+        </div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-node" style="border-color:var(--orange);flex:1;max-width:none;">
+          <h4>③ DataLoader Collate → Batch Dict</h4>
+          <ul>
+            <li>默认 collate: 将各字段 stack 为 batch 维度</li>
+            <li>Multi-resolution: batch_size=1 因为不同样本可能不同分辨率</li>
+            <li>多流: WeightedDataLoaderSampler 按权重随机选流</li>
+          </ul>
+        </div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-node" style="border-color:var(--pink);flex:1;max-width:none;">
+          <h4>④ TunaUnit.compute_loss(batch)</h4>
+          <ul>
+            <li>dataset_key 解包 (如 "image_t2i", "edit", ...)</li>
+            <li>model_outputs = self.module(data)</li>
+            <li>内部: prepare_latents_and_labels() → create_attention_mask() → tuna_model()</li>
+            <li>返回: {"loss": ..., "loss_ntp": ..., "loss_flow": ..., "loss_disp": ...}</li>
+          </ul>
+        </div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-node" style="border-color:var(--green);flex:1;max-width:none;">
+          <h4>⑤ TensorBoard Logging</h4>
+          <ul>
+            <li>Train Step Loss / ntploss / mseloss</li>
+            <li>Train grad norm</li>
+            <li>Learning Rate (per param group)</li>
+            <li>Train Throughput (tokens/sec)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>⚙️ 多流混合采样机制</h3>
+    <div class="flow" style="margin-top:12px">
+      <div class="flow-row">
+        <div class="flow-node" style="border-color:var(--accent);flex:1;max-width:none;">
+          <h4>WeightedDataLoaderSampler</h4>
+          <ul>
+            <li>输入: {"image_t2i": DataLoader, "mmu": DataLoader, "edit": DataLoader, ...}</li>
+            <li>sampling_weights: {"image_t2i": 0.5, "mmu": 0.3, "edit": 0.2}</li>
+            <li>每步按权重随机选一个 DataLoader</li>
+            <li>sync_sampling=True: rank 0 选择后 broadcast 到所有 rank</li>
+            <li>DataLoader 耗尽自动重新初始化 (无限迭代)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>🖼️ 多分辨率策略</h3>
+    <div class="two-col">
+      <div class="flow-node" style="max-width:none;">
+        <h4>Dataset 级 (TIDataset multi_resolution=True)</h4>
+        <ul>
+          <li>每样本根据原图 AR 选最近 bucket</li>
+          <li>默认 buckets: [512×512, 448×576, 576×448, 384×672, 672×384]</li>
+          <li>动态调整 num_image_tokens</li>
+          <li>需要 batch_size=1</li>
+        </ul>
+      </div>
+      <div class="flow-node" style="max-width:none;">
+        <h4>Batch 级 (MultiResolutionIterator)</h4>
+        <ul>
+          <li>Wraps DataLoader</li>
+          <li>每 batch 随机选取一个分辨率</li>
+          <li>对 images, images_clip 统一 resize (bicubic interpolate)</li>
+          <li>支持 [B,C,H,W] 和 [B,C,T,H,W]</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- PANEL: Inference -->
+<!-- ================================================================== -->
+<div id="panel-inference" class="panel">
+  <div class="card">
+    <h3>🚀 推理管线总览</h3>
+    <table>
+      <tr><th>任务</th><th>入口函数</th><th>输入</th><th>输出</th><th>Pipeline 方法</th></tr>
+      <tr>
+        <td>🎨 文生图</td>
+        <td><code>generate()</code></td>
+        <td>prompts: str | List[str]</td>
+        <td>List[PIL.Image]</td>
+        <td><code>pipeline.t2i()</code></td>
+      </tr>
+      <tr>
+        <td>🔍 图理解</td>
+        <td><code>understand()</code></td>
+        <td>images: Tensor | List, prompts: str | List[str]</td>
+        <td>List[str]</td>
+        <td><code>pipeline.mmu()</code></td>
+      </tr>
+      <tr>
+        <td>✂️ 图编辑</td>
+        <td><code>edit()</code></td>
+        <td>images: Tensor (B,N,C,H,W), instructions: str | List[str]</td>
+        <td>List[PIL.Image]</td>
+        <td><code>pipeline.t2i_edit()</code></td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>🔍 MMU 推理流程详解 (pipeline.mmu)</h3>
+    <div class="flow" style="margin-top:12px">
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4>① 输入预处理</h4>
+          <ul>
+            <li>pixel_values → device</li>
+            <li>prompt 前添加 "&lt;image&gt;\n"</li>
+            <li>apply_chat_template() → 对话格式文本</li>
+          </ul>
+        </div>
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4>② 序列构建</h4>
+          <ul>
+            <li>Tokenize 对话文本</li>
+            <li>找到 &lt;image&gt; token 位置</li>
+            <li>替换为 [boi][img_pad]*N[eoi]</li>
+            <li>构造 modality_positions, text_masks, image_masks</li>
+          </ul>
+        </div>
+      </div>
+      <div class="flow-row" style="margin-top:12px">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4>③ 模型前向</h4>
+          <ul>
+            <li>prepare_latents_and_labels()</li>
+            <li>create_attention_mask()</li>
+            <li>tuna_model(...) → input_embeds</li>
+          </ul>
+        </div>
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4>④ 生成 & 解码</h4>
+          <ul>
+            <li>mmu_generate(input_embeds, attention_mask, ...)</li>
+            <li>支持 do_sample, temperature, top_k, top_p</li>
+            <li>tokenizer.decode() → 文本</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>🎨 T2I 推理流程详解 (pipeline.t2i)</h3>
+    <div class="highlight">
+      <strong>核心流程:</strong> prompts → tokenize → 序列构建 → tuna_model 前向获取 hidden states →
+      flow matching 扩散去噪 → VAE decode → PIL images。<br>
+      <strong>关键参数:</strong> num_inference_steps, guidance_scale, sampling_method, time_shifting_factor, noise_level。
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- PANEL: Return Structures -->
+<!-- ================================================================== -->
+<div id="panel-returns" class="panel">
+  <div class="card">
+    <h3>📋 各任务统一的 Sample Dict 返回结构</h3>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>T2I</th><th>MMU</th><th>EDIT</th><th>Video</th><th>说明</th></tr>
+      <tr>
+        <td><code>images</code></td>
+        <td>Tensor</td>
+        <td>(3,H,W)</td><td>(3,H,W)</td><td>(2,3,H,W)</td><td>(C,T,H,W)</td>
+        <td>主图像张量，[-1,1] 范围</td>
+      </tr>
+      <tr>
+        <td><code>text_tokens</code></td>
+        <td>LongTensor</td>
+        <td>✅</td><td>✅</td><td>✅</td><td>✅</td>
+        <td>统一序列 token ids, [max_seq_len]</td>
+      </tr>
+      <tr>
+        <td><code>text_labels</code></td>
+        <td>LongTensor</td>
+        <td>✅</td><td>✅</td><td>✅</td><td>✅</td>
+        <td>LM loss 标签, -100=不参与loss, [max_seq_len]</td>
+      </tr>
+      <tr>
+        <td><code>text_masks</code></td>
+        <td>BoolTensor</td>
+        <td>✅</td><td>✅</td><td>✅</td><td>✅</td>
+        <td>1=真实文本token, 0=img_pad/pad, [max_seq_len]</td>
+      </tr>
+      <tr>
+        <td><code>image_masks</code></td>
+        <td>BoolTensor</td>
+        <td>✅</td><td>✅</td><td>✅</td><td>✅</td>
+        <td>1=img_pad位置, T2I/MMU全图像段, EDIT仅target, [max_seq_len]</td>
+      </tr>
+      <tr>
+        <td><code>modality_positions</code></td>
+        <td>LongTensor</td>
+        <td>✅</td><td>✅</td><td>✅</td><td>✅</td>
+        <td>[num_imgs, 2], 每行 [start, length], 标记图像在序列中的起始和长度</td>
+      </tr>
+      <tr>
+        <td><code>images_clip</code></td>
+        <td>Tensor</td>
+        <td>✅</td><td>✅</td><td>✅</td><td>—</td>
+        <td>SigLIP 或低分辨率版本，(3,384,384), Video不支持</td>
+      </tr>
+      <tr>
+        <td><code>data_type</code></td>
+        <td>str</td>
+        <td>"t2i"</td><td>"mmu"</td><td>"edit_interleaved"</td><td>"t2i"</td>
+        <td>任务类型标识</td>
+      </tr>
+      <tr>
+        <td><code>sentence</code></td>
+        <td>str</td>
+        <td>✅</td><td>✅</td><td>✅</td><td>✅</td>
+        <td>原始文本 (调试用)</td>
+      </tr>
+      <tr>
+        <td><code>siglip_pixel_attention_mask</code></td>
+        <td>BoolTensor</td>
+        <td>可选</td><td>可选</td><td>可选</td><td>—</td>
+        <td>SigLIP2 的 patch attention mask</td>
+      </tr>
+      <tr>
+        <td><code>siglip_spatial_shapes</code></td>
+        <td>LongTensor</td>
+        <td>可选</td><td>可选</td><td>可选</td><td>—</td>
+        <td>SigLIP2 的 (H_patches, W_patches)</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>🏷️ 各任务 Loss 掩码策略对照</h3>
+    <table>
+      <tr><th>任务</th><th>text_labels 模式</th><th>image_mask 模式</th><th>loss 来源</th></tr>
+      <tr>
+        <td>T2I</td>
+        <td>全部 -100</td>
+        <td>1 在 img_pad 位置</td>
+        <td>loss_flow（扩散/流匹配 loss）</td>
+      </tr>
+      <tr>
+        <td>MMU</td>
+        <td>response tokens = 实际值, 其余 -100</td>
+        <td>1 在 img_pad 位置</td>
+        <td>loss_ntp（LM loss）+ loss_flow</td>
+      </tr>
+      <tr>
+        <td>EDIT</td>
+        <td>全部 -100</td>
+        <td>1 仅在 target 图像 img_pad</td>
+        <td>loss_flow（仅 target 图像）</td>
+      </tr>
+      <tr>
+        <td>Conversation T2I</td>
+        <td>assistant 文本 + 末尾 eos = 实际值, 其余 -100</td>
+        <td>1 在 img_pad 位置</td>
+        <td>loss_ntp + loss_flow</td>
+      </tr>
+      <tr>
+        <td>Conversation MMU</td>
+        <td>奇数轮 (assistant) = 实际值, 其余 -100</td>
+        <td>1 在 img_pad 位置</td>
+        <td>loss_ntp</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>📐 images 张量形状快速参考</h3>
+    <table>
+      <tr><th>数据集</th><th>单个样本</th><th>Batch (B=4)</th><th>值域</th></tr>
+      <tr><td>TIDataset (t2i/mm)</td><td>(3, H, W)</td><td>(B, 3, H, W)</td><td>[-1, 1]</td></tr>
+      <tr><td>EditDataset</td><td>(2, 3, H, W)</td><td>(B, 2, 3, H, W)</td><td>[-1, 1]</td></tr>
+      <tr><td>VideoDataset</td><td>(3, T, H, W)</td><td>(B, 3, T, H, W)</td><td>[-1, 1]</td></tr>
+      <tr><td>images_clip</td><td>(3, 384, 384)</td><td>(B, 3, 384, 384)</td><td>[-1, 1]</td></tr>
+    </table>
+  </div>
+</div>
+
+</div>
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[onclick*="${name}"]`).classList.add('active');
+  document.getElementById('panel-' + name).classList.add('active');
+}
+</script>
+</body>
+</html>

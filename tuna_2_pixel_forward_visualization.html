@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tuna2Pixel 模型前向数据流可视化</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #161822; --surface2: #1e2030; --border: #2a2d3e;
+    --text: #c9d1d9; --text2: #8b949e;
+    --accent: #58a6ff; --green: #3fb950; --yellow: #d29922;
+    --orange: #db6d28; --red: #f85149; --purple: #a371f7; --pink: #db61a2;
+    --teal: #39c5cf;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height:1.5; }
+  .header { background: linear-gradient(135deg, #1a1c2e, #1e2030, #1a1c2e); border-bottom:1px solid var(--border); padding:28px 48px; text-align:center; }
+  .header h1 { font-size:24px; font-weight:700; margin-bottom:6px; }
+  .header p { color:var(--text2); font-size:13px; }
+  .tabs { display:flex; gap:2px; background:var(--surface); padding:8px 48px 0; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100; }
+  .tab { padding:10px 20px; border-radius:8px 8px 0 0; cursor:pointer; font-size:14px; font-weight:500; color:var(--text2); border:1px solid transparent; border-bottom:none; transition:all 0.2s; }
+  .tab:hover { color:var(--text); background:var(--surface2); }
+  .tab.active { color:var(--accent); background:var(--bg); border-color:var(--border); }
+  .content { max-width:1500px; margin:0 auto; padding:28px 48px; }
+  .panel { display:none; }
+  .panel.active { display:block; }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:24px; margin-bottom:20px; }
+  .card h3 { font-size:17px; margin-bottom:14px; color:var(--accent); }
+  .card h4 { font-size:13px; margin-bottom:8px; color:var(--yellow); }
+
+  /* Flow */
+  .flow { display:flex; flex-direction:column; gap:12px; }
+  .flow-row { display:flex; align-items:stretch; gap:12px; justify-content:center; flex-wrap:wrap; }
+  .flow-node {
+    background:var(--surface2); border:1px solid var(--border); border-radius:10px;
+    padding:16px 20px; flex:1; min-width:160px; max-width:340px;
+    transition:transform 0.2s, box-shadow 0.2s;
+  }
+  .flow-node:hover { transform:translateY(-2px); box-shadow:0 4px 20px rgba(88,166,255,0.1); }
+  .flow-node .tag {
+    font-size:10px; padding:2px 8px; border-radius:10px; font-weight:600; text-transform:uppercase;
+  }
+  .tag.c0 { background:rgba(88,166,255,0.15); color:var(--accent); }
+  .tag.c1 { background:rgba(63,185,80,0.15); color:var(--green); }
+  .tag.c2 { background:rgba(163,113,247,0.15); color:var(--purple); }
+  .tag.c3 { background:rgba(210,153,34,0.15); color:var(--yellow); }
+  .tag.c4 { background:rgba(219,97,162,0.15); color:var(--pink); }
+  .tag.c5 { background:rgba(248,81,73,0.15); color:var(--red); }
+  .tag.c6 { background:rgba(57,197,207,0.15); color:var(--teal); }
+  .tag.c7 { background:rgba(219,109,40,0.15); color:var(--orange); }
+  .flow-node h4 { font-size:13px; margin-bottom:6px; display:flex; align-items:center; gap:8px; }
+  .flow-node .desc { font-size:12px; color:var(--text2); }
+  .flow-node ul { margin:6px 0 0 16px; font-size:11px; color:var(--text2); }
+  .flow-node ul li { margin-bottom:3px; }
+  .arrow-down { display:flex; justify-content:center; padding:2px 0; color:var(--text2); font-size:18px; }
+  .arrow-right { display:flex; align-items:center; color:var(--text2); font-size:16px; min-width:20px; }
+
+  pre.code { background:var(--bg); border-radius:8px; padding:14px; overflow-x:auto; font-family:'SF Mono','Consolas',monospace; font-size:12px; border:1px solid var(--border); margin-top:8px; line-height:1.6; }
+  pre.code .k { color:var(--pink); }
+  pre.code .s { color:var(--green); }
+  pre.code .c { color:var(--text2); }
+  pre.code .n { color:var(--accent); }
+
+  table { width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; }
+  th { background:var(--surface2); color:var(--accent); padding:8px 12px; text-align:left; font-weight:600; border-bottom:2px solid var(--border); }
+  td { padding:8px 12px; border-bottom:1px solid var(--border); }
+  tr:hover td { background:rgba(88,166,255,0.03); }
+
+  .highlight { background:rgba(88,166,255,0.05); border:1px solid rgba(88,166,255,0.2); border-radius:8px; padding:12px; margin:10px 0; font-size:12px; }
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  @media(max-width:900px) { .two-col { grid-template-columns:1fr; } }
+
+  .seq { display:flex; gap:2px; flex-wrap:wrap; align-items:center; font-family:'SF Mono','Consolas',monospace; font-size:10px; padding:12px; background:var(--bg); border-radius:8px; overflow-x:auto; }
+  .seq span { padding:4px 7px; border-radius:3px; white-space:nowrap; font-weight:600; }
+  .seq .bos { background:rgba(88,166,255,0.2); color:var(--accent); }
+  .seq .eos { background:rgba(88,166,255,0.2); color:var(--accent); }
+  .seq .boi { background:rgba(63,185,80,0.2); color:var(--green); }
+  .seq .eoi { background:rgba(63,185,80,0.2); color:var(--green); }
+  .seq .img { background:rgba(163,113,247,0.2); color:var(--purple); }
+  .seq .txt { background:rgba(219,97,162,0.15); color:var(--pink); }
+  .seq .time { background:rgba(57,197,207,0.2); color:var(--teal); }
+  .seq .ar { background:rgba(210,153,34,0.2); color:var(--yellow); }
+  .seq .pad { background:rgba(139,148,158,0.1); color:var(--text2); }
+
+  .legend { display:flex; gap:16px; flex-wrap:wrap; margin:12px 0; }
+  .legend span { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--text2); }
+  .legend .sw { width:12px; height:12px; border-radius:2px; }
+
+  .shape { font-family:'SF Mono','Consolas',monospace; font-size:11px; background:rgba(88,166,255,0.08); padding:1px 6px; border-radius:4px; color:var(--accent); }
+  code { font-family:'SF Mono','Consolas',monospace; font-size:12px; background:rgba(88,166,255,0.08); padding:1px 5px; border-radius:3px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Tuna2Pixel (Variant C) 模型前向数据流</h1>
+  <p>纯 Patchify 架构 — 无 Vision Encoder · 无 VAE · Conv2d 直接 patchify 像素 · JiT 风格 x0 预测</p>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('overview')">全景架构</div>
+  <div class="tab" onclick="switchTab('wrapper')">Wrapper forward()</div>
+  <div class="tab" onclick="switchTab('inner')">Inner forward()</div>
+  <div class="tab" onclick="switchTab('embeds')">Embed & Prepare</div>
+  <div class="tab" onclick="switchTab('diffhead')">Diffusion Head</div>
+  <div class="tab" onclick="switchTab('loss')">Loss 计算</div>
+</div>
+
+<div class="content">
+
+<!-- ================================================================ -->
+<!-- PANEL: Overview -->
+<!-- ================================================================ -->
+<div id="panel-overview" class="panel active">
+  <div class="card">
+    <h3>Tuna2Pixel = Qwen2.5 LLM + SimplePatchEmbedding + Diffusion Head</h3>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--accent)"></span> 文本路径</span>
+      <span><span class="sw" style="background:var(--green)"></span> 主图像路径 (pixel_values)</span>
+      <span><span class="sw" style="background:var(--purple)"></span> images_clip 重建条件</span>
+      <span><span class="sw" style="background:var(--yellow)"></span> 时间/Aspect Ratio Embed</span>
+      <span><span class="sw" style="background:var(--pink)"></span> Diffusion Head</span>
+      <span><span class="sw" style="background:var(--red)"></span> Loss 输出</span>
+    </div>
+  </div>
+
+  <div class="flow">
+    <!-- Row 1: Inputs -->
+    <div class="flow-row">
+      <div class="flow-node" style="border-color:var(--accent)">
+        <h4><span class="tag c0">Text Input</span> text_tokens</h4>
+        <div class="desc">统一序列 token ids <span class="shape">[B, max_seq_len]</span></div>
+      </div>
+      <div class="flow-node" style="border-color:var(--green)">
+        <h4><span class="tag c1">Pixels</span> images (pixel_values)</h4>
+        <div class="desc">RGB 像素值 <span class="shape">[B, 3, H, W]</span> 或 <span class="shape">[B, N, 3, H, W]</span> (interleaved)</div>
+      </div>
+      <div class="flow-node" style="border-color:var(--purple)">
+        <h4><span class="tag c2">Clip Image</span> images_clip</h4>
+        <div class="desc">低分辨率图像 <span class="shape">[B, 3, 384, 384]</span> 用于重建条件</div>
+      </div>
+      <div class="flow-node" style="border-color:var(--yellow)">
+        <h4><span class="tag c3">Masks & Positions</span></h4>
+        <div class="desc">text_masks, image_masks, text_labels, modality_positions, data_type</div>
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <!-- Row 2: JiT Noise & Patch -->
+    <div class="flow-row">
+      <div class="flow-node" style="border-color:var(--yellow)">
+        <h4><span class="tag c3">JiT Noise</span> prepare_latents_and_labels</h4>
+        <ul>
+          <li>z_t = t * x + (1-t) * noise</li>
+          <li>t ~ sigmoid(N(-0.8, 0.8²))</li>
+          <li>返回: (xt, t, x0_clean, masks, pixel_values)</li>
+        </ul>
+      </div>
+      <div class="flow-node" style="border-color:var(--green)">
+        <h4><span class="tag c1">Patch Embed</span> SimplePatchEmbedding</h4>
+        <ul>
+          <li>Conv2d(patch_size=2, stride=2)</li>
+          <li>[B,C,H,W] → [B, hidden, H/2, W/2]</li>
+          <li>Flatten + RMSNorm → <span class="shape">[B, N_patches, hidden_size]</span></li>
+        </ul>
+      </div>
+      <div class="flow-node" style="border-color:var(--purple)">
+        <h4><span class="tag c2">Clean Embeds</span> prepare_clean_image_embeds</h4>
+        <ul>
+          <li>images_clip → 同一个 PatchEmbed</li>
+          <li>注入到 text_tokens 的 embedding 序列中</li>
+          <li>提供重建条件 (reconstruction conditioning)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <!-- Row 3: Embed + Slot -->
+    <div class="flow-row">
+      <div class="flow-node" style="border-color:var(--accent)">
+        <h4><span class="tag c0">Token Embed</span> embed_tokens</h4>
+        <div class="desc">text_tokens → <span class="shape">[B, S, D]</span> input_embeds</div>
+      </div>
+      <div class="flow-node" style="border-color:var(--yellow)">
+        <h4><span class="tag c3">Time/AR Embed</span> TimestepEmbedder</h4>
+        <ul>
+          <li>t → sinusoidal(t, 256) → MLP → <span class="shape">[B*n_imgs, D]</span></li>
+          <li>h,w → same embedder → <span class="shape">[B, D]</span></li>
+        </ul>
+      </div>
+      <div class="flow-node" style="border-color:var(--teal)">
+        <h4><span class="tag c6">3D RoPE</span> build_rope</h4>
+        <div class="desc">为 [T, H/2, W/2] 位置网格生成 3D 旋转位置编码</div>
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <!-- Row 4: Prepare Input -->
+    <div class="flow-row">
+      <div class="flow-node" style="flex:2;max-width:none;">
+        <h4><span class="tag c7">_prepare_input</span> 将图像特征注入嵌入序列</h4>
+        <div class="seq">
+          <span class="boi">BOI</span>
+          <span class="ar">H_emb</span>
+          <span class="ar">W_emb</span>
+          <span class="time">T_emb</span>
+          <span class="img">img_patch_0</span>
+          <span class="img">img_patch_1</span>
+          <span class="img">···</span>
+          <span class="img">img_patch_N</span>
+          <span class="eoi">EOI</span>
+        </div>
+        <div class="desc" style="margin-top:4px">根据 modality_positions 在序列中对应的 offset 处写入, 仅覆盖图像 token 区域</div>
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <!-- Row 5: Qwen2.5 LLM -->
+    <div class="flow-row">
+      <div class="flow-node" style="flex:2;max-width:none;border-color:var(--accent);border-width:2px;">
+        <h4><span class="tag c0">Qwen2.5 7B LLM</span> self.tuna(inputs_embeds=input_embeds, attention_mask=omni_mask)</h4>
+        <ul>
+          <li>输出: logits <span class="shape">[B, S, vocab_size]</span></li>
+          <li>输出: hidden_states[-1] <span class="shape">[B, S, hidden_size]</span></li>
+          <li>Omni Attention: 文本用1D RoPE, 图像用3D RoPE, 全序列双向 attention</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <!-- Row 6: Diffusion Head -->
+    <div class="flow-row">
+      <div class="flow-node" style="border-color:var(--pink);flex:1;max-width:none;">
+        <h4><span class="tag c4">Diff Head</span> diff_proj (可选)</h4>
+        <div class="desc">若 hidden_size ≠ LLM hidden_size: Linear→GELU→Linear 投影</div>
+      </div>
+      <div class="flow-node" style="border-color:var(--pink);flex:1;max-width:none;">
+        <h4><span class="tag c4">Diff Head</span> ModulatedAttentionBlock × N</h4>
+        <ul>
+          <li>adaLN: time_embeds → shift, scale, gate (6×D)</li>
+          <li>仅调制图像位置的 hidden states</li>
+          <li>Self-Attn (3D RoPE on images) + MLP</li>
+          <li>N=10 layers（flow_head_num）</li>
+        </ul>
+      </div>
+      <div class="flow-node" style="border-color:var(--pink);flex:1;max-width:none;">
+        <h4><span class="tag c4">Diff Head</span> FinalLayer</h4>
+        <ul>
+          <li>RMSNorm + adaLN modulation</li>
+          <li>Linear → <span class="shape">[B, S, patch_size² × C]</span></li>
+          <li>x0_pred: 直接预测干净图像像素</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="arrow-down">▼</div>
+
+    <!-- Row 7: Outputs -->
+    <div class="flow-row">
+      <div class="flow-node" style="border-color:var(--red)">
+        <h4><span class="tag c5">Training</span> loss_ntp</h4>
+        <div class="desc">Next-token-prediction LM loss (CrossEntropy, ignore_index=-100)</div>
+      </div>
+      <div class="flow-node" style="border-color:var(--red)">
+        <h4><span class="tag c5">Training</span> loss_flow</h4>
+        <div class="desc">jit_x0_prediction_loss: MSE(x0_pred, x0_target) × 1/(1-t)² 权重</div>
+      </div>
+      <div class="flow-node" style="border-color:var(--green)">
+        <h4><span class="tag c1">Inference</span> x0_pred</h4>
+        <div class="desc">Slice → remove time/AR tokens → unpatchify → <span class="shape">[B, C, T, H, W]</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- PANEL: Wrapper -->
+<!-- ================================================================ -->
+<div id="panel-wrapper" class="panel">
+  <div class="card">
+    <h3>Tuna2PixelModel.forward(batch) — 训练入口 (Wrapper Level)</h3>
+    <p style="color:var(--text2);margin-bottom:14px">
+      这是 Hydra-instantiable 的 wrapper，接收 DataLoader 输出的 batch dict，协调整个前向过程。
+    </p>
+
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4><span class="tag c0">Step 1</span> 解包 Batch Dict</h4>
+          <pre class="code"><span class="n">text_tokens</span>  = batch[<span class="s">"text_tokens"</span>]     <span class="c"># [B, max_seq_len]</span>
+<span class="n">text_labels</span>  = batch[<span class="s">"text_labels"</span>]     <span class="c"># [B, max_seq_len]</span>
+<span class="n">pixel_values</span> = batch[<span class="s">"images"</span>]          <span class="c"># [B, 3, H, W] or [B, N, 3, H, W]</span>
+<span class="n">pixel_v_low</span>  = batch.get(<span class="s">"images_clip"</span>)   <span class="c"># [B, 3, 384, 384]</span>
+<span class="n">text_masks</span>   = batch[<span class="s">"text_masks"</span>]       <span class="c"># [B, max_seq_len] Bool</span>
+<span class="n">image_masks</span>  = batch[<span class="s">"image_masks"</span>]      <span class="c"># [B, max_seq_len] Bool</span>
+<span class="n">mod_pos</span>      = batch[<span class="s">"modality_positions"</span>] <span class="c"># [B, num_imgs, 2]</span>
+<span class="n">data_type</span>    = batch[<span class="s">"data_type"</span>]        <span class="c"># ["t2i", "mmu", "edit_interleaved", ...]</span></pre>
+        </div>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4><span class="tag c1">Step 2</span> 处理 Interleaved 数据</h4>
+          <div class="highlight">
+            若 <code>data_type[0] == "mmu_interleaved"</code> 或 <code>"edit_interleaved"</code>:
+            <code>pixel_values</code> 从 <span class="shape">[B, N, 3, H, W]</span> reshape 为 <span class="shape">[B*N, 3, H, W]</span>，
+            <code>data_type</code> 复制 N 份。每张子图独立参与 JiT 噪声调度。
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4><span class="tag c2">Step 3</span> prepare_latents_and_labels (JiT 风格)</h4>
+          <table>
+            <tr><th>data_type</th><th>max_t0</th><th>含义</th></tr>
+            <tr><td>t2i / t2i_cond / t2i_edit</td><td>None</td><td>随机采样 t（全噪声范围）</td></tr>
+            <tr><td>edit_interleaved, i%2==0</td><td>self.und_max_t0</td><td>条件图 (raw image)：限制噪声量</td></tr>
+            <tr><td>edit_interleaved, i%2==1</td><td>None</td><td>目标图 (target)：完全加噪</td></tr>
+            <tr><td>mmu / mmu_vid / mmu_interleaved</td><td>self.und_max_t0 / 1.0-noise_lvl</td><td>理解任务：轻微噪声或干净图</td></tr>
+          </table>
+          <div class="highlight" style="margin-top:8px">
+            <strong>z_t = t * x + (1-t) * noise</strong> — 直接对像素加噪，不经过 VAE latent space。<br>
+            对 mmu 任务且 und_max_t0==1.0 时，image_masks 被清零（干净图没有 flow loss）
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4><span class="tag c3">Step 4</span> prepare_clean_image_embeds</h4>
+          <div class="highlight">
+            <code>images_clip</code> (低分辨率版本) → 同一个 <code>SimplePatchEmbedding</code> →
+            clean_image_embeds <span class="shape">[B, N_clip_patches, hidden_size]</span><br>
+            这些 embedding 会在 inner forward 中替换掉 text_tokens embedding 序列中图像位置处的 embedding，
+            作为重建条件（reconstruction conditioning）。
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4><span class="tag c4">Step 5</span> create_attention_mask</h4>
+          <div class="highlight">
+            根据 <code>attention_backend</code>:
+            <ul>
+              <li><strong>sdpa</strong>: <code>omni_attn_mask_naive()</code> → attention_mask <span class="shape">[B, 1, S, S]</span>, diffhead_mask=None</li>
+              <li><strong>flexattention</strong>: <code>omni_attn_mask_flexattention()</code> → BlockMask (LLM + DiffHead 各一个)</li>
+            </ul>
+            Omni Attention: 图像 token ↔ 图像 token, 文本 ↔ 文本, 图像↔文本, 全部双向可见。
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;border-color:var(--accent);border-width:2px;">
+          <h4><span class="tag c0">Step 6</span> self.tuna_model(...) → Inner Forward</h4>
+          <div class="desc">见 "Inner forward()" 标签页的详细分解</div>
+        </div>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4><span class="tag c5">Step 7</span> 组装 Total Loss</h4>
+          <pre class="code">total_loss = <span class="n">flow_coeff</span> * loss_flow + <span class="n">ntp_coeff</span> * loss_ntp
+<span class="k">if</span> use_disp: total_loss += 0.25 * loss_disp</pre>
+          <div class="desc">返回 dict: {"loss", "loss_ntp", "loss_flow", "loss_disp", "logits", "recons_images"}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- PANEL: Inner Forward -->
+<!-- ================================================================ -->
+<div id="panel-inner" class="panel">
+  <div class="card">
+    <h3>Tuna2Pixel.forward() — Inner Model 逐阶段详解</h3>
+  </div>
+
+  <div class="flow">
+    <!-- Phase 1 -->
+    <div class="flow-row">
+      <div class="flow-node" style="flex:1;max-width:none;border-color:var(--accent)">
+        <h4><span class="tag c0">Phase 1</span> Token Embedding + Clean Image Conditioning</h4>
+        <pre class="code"><span class="c"># 1a. 文本 Token → Embedding</span>
+input_embeds = self.tuna.model.embed_tokens(text_tokens)  <span class="c"># [B, S, D_llm]</span>
+
+<span class="c"># 1b. 替换图像区 embedding 为 clean_image_embeds（重建条件）</span>
+<span class="k">if</span> clean_image_embeds != <span class="k">None</span>:
+    <span class="k">for</span> i:  <span class="c"># 遍历每个 batch</span>
+        img_offset = modality_positions[i][0][0]
+        <span class="c"># 在图像 token 前 clean_seq_len+1 个位置处替换</span>
+        input_embeds[i, replace_start:replace_start+clean_seq_len, :] = clean_image_embeds[i]</pre>
+      </div>
+    </div>
+
+    <!-- Phase 2 -->
+    <div class="flow-row">
+      <div class="flow-node" style="flex:1;max-width:none;border-color:var(--green)">
+        <h4><span class="tag c1">Phase 2</span> _prepare_embeds(image_latents, t)</h4>
+        <div class="two-col">
+          <div>
+            <h4>2a. Patchify 图像</h4>
+            <pre class="code"><span class="c"># image_latents: [B, C, T, H, W]</span>
+image_embeds = _patchify_5d(
+    image_latents.to(dtype),
+    self.vision_encoder,  <span class="c"># SimplePatchEmbedding</span>
+    reshape_frame_to_batch_dim,
+)
+<span class="c"># → [B*T, (H/p)*(W/p), hidden_size]</span></pre>
+          </div>
+          <div>
+            <h4>2b. 时间步 Embedding</h4>
+            <pre class="code"><span class="c"># t: [B*n_imgs] 标量时间步</span>
+time_embeds = self.time_embed(t, dtype)
+<span class="c"># t → sinusoidal(t, 256) → MLP → [B*n_imgs, D_diff]</span></pre>
+          </div>
+        </div>
+        <div class="two-col" style="margin-top:12px">
+          <div>
+            <h4>2c. Aspect Ratio Embedding (可选)</h4>
+            <pre class="code"><span class="k">if</span> add_aspect_ratio_embeds:
+    height_embeds = self.aspect_ratio_embed(H_patches, dtype)
+    width_embeds  = self.aspect_ratio_embed(W_patches, dtype)
+    <span class="c"># → [B, D_diff] 各一个</span></pre>
+          </div>
+          <div>
+            <h4>2d. 3D RoPE 构建</h4>
+            <pre class="code">rope_3d = build_rope(
+    latent_shape=[T, H, W],
+    patch_size=16,
+    attention_head_dim=64,
+)
+<span class="c"># → [T*Hp*Wp, Dh, 2, 2]</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 3 -->
+    <div class="flow-row">
+      <div class="flow-node" style="flex:1;max-width:none;border-color:var(--purple)">
+        <h4><span class="tag c2">Phase 3</span> _prepare_input — 将图像特征写入序列</h4>
+        <div class="highlight">
+          <strong>视觉 token 格式:</strong>
+          <div class="seq" style="margin-top:6px">
+            <span class="boi">BOI</span>
+            <span class="ar">height_emb</span>
+            <span class="ar">width_emb</span>
+            <span class="time">time_emb</span>
+            <span class="img">img_emb_0</span>
+            <span class="img">img_emb_1</span>
+            <span class="img">···</span>
+            <span class="img">img_emb_K-3</span>
+            <span class="eoi">EOI</span>
+          </div>
+        </div>
+        <table style="margin-top:10px">
+          <tr><th>配置</th><th>offset+0</th><th>offset+1</th><th>offset+2</th><th>offset+3..+length-1</th></tr>
+          <tr>
+            <td>add_time_embeds + add_aspect_ratio_embeds</td>
+            <td>height_emb</td><td>width_emb</td><td>time_emb</td><td>image patch embeds (length-3个)</td>
+          </tr>
+          <tr>
+            <td>add_time_embeds only</td>
+            <td>time_emb</td><td colspan="3">image patch embeds (length-1个)</td>
+          </tr>
+          <tr>
+            <td>neither</td>
+            <td colspan="4">image patch embeds (length个, 直接覆盖)</td>
+          </tr>
+        </table>
+        <div class="highlight" style="margin-top:8px">
+          同时构造 <code>new_image_labels</code>: 将 ground-truth 像素值 <code>image_labels</code> 按照相同的 patch 布局填入
+          <span class="shape">[B, S, patch_size²×C]</span> 形状的标签张量中，仅在图像 token 位置有非零值。
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 4 -->
+    <div class="flow-row">
+      <div class="flow-node" style="flex:1;max-width:none;border-color:var(--accent);border-width:2px;">
+        <h4><span class="tag c0">Phase 4</span> Qwen2.5 LLM Forward</h4>
+        <pre class="code">outputs = self.tuna(
+    inputs_embeds=input_embeds,        <span class="c"># [B, S, D_llm] — 已融合文本+图像+时间+AR</span>
+    attention_mask=attention_mask,     <span class="c"># Omni attention mask</span>
+    output_hidden_states=<span class="k">True</span>,
+)
+logits = outputs[<span class="s">"logits"</span>]                <span class="c"># [B, S, vocab_size]</span>
+last_hidden = outputs[<span class="s">"hidden_states"</span>][-1]  <span class="c"># [B, S, D_llm]</span></pre>
+        <div class="highlight">
+          <strong>关键:</strong> Qwen2.5 以全序列双向 attention 方式处理混合模态序列。
+          文本位置的 1D RoPE 和图像位置的 3D RoPE 通过 <code>apply_rope_image3d_text1d</code> 分别应用。
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 5 -->
+    <div class="flow-row">
+      <div class="flow-node" style="flex:1;max-width:none;border-color:var(--pink)">
+        <h4><span class="tag c4">Phase 5</span> Diffusion Head → x0_pred</h4>
+        <pre class="code"><span class="c"># 5a. 可选投影</span>
+<span class="k">if</span> hidden_size != D_llm:
+    last_hidden = self.diff_proj(last_hidden)  <span class="c"># → [B, S, hidden_size]</span>
+
+<span class="c"># 5b. N 层 ModulatedAttentionBlock</span>
+<span class="k">for</span> layer <span class="k">in</span> self.diffusion_head_a:  <span class="c"># N = flow_head_num = 10</span>
+    last_hidden = layer(
+        hidden_states=last_hidden,
+        adaln_input=time_embeds,       <span class="c"># 时间条件 → shift/scale/gate</span>
+        attention_mask=diffhead_attention_mask,
+        position_ids=position_ids,
+        rope_3d=rope_3d,               <span class="c"># 3D RoPE for image positions</span>
+        modality_positions=modality_positions,
+    )[0]
+
+<span class="c"># 5c. FinalLayer: Norm + adaLN + Linear → x0 prediction</span>
+x0_pred = self.diffusion_head_b(last_hidden, time_embeds, modality_positions)
+<span class="c"># → [B, S, patch_size² × C]  (C = image_latent_dim = 16)</span></pre>
+      </div>
+    </div>
+
+    <!-- Phase 6 -->
+    <div class="flow-row">
+      <div class="flow-node" style="flex:1;max-width:none;border-color:var(--red)">
+        <h4><span class="tag c5">Phase 6</span> 分支：训练 vs 推理</h4>
+        <div class="two-col">
+          <div>
+            <h4>训练路径 (text_labels 和 image_labels 都存在)</h4>
+            <pre class="code">loss_ntp = next_token_prediction(logits, text_labels, vocab_size)
+<span class="c"># CrossEntropy(logits[:,:-1], labels[:,1:], ignore=-100)</span>
+
+loss_flow = jit_x0_prediction_loss(
+    x0_pred, new_image_labels, t, image_masks
+)
+<span class="c"># MSE(x0_pred, target) * 1/(1-t)² * image_masks</span>
+
+loss_disp = disp_loss(act[-1])  <span class="c"># (可选) InfoNCE-L2 多样性 loss</span>
+
+<span class="k">return</span> logits, loss_ntp, loss_flow, loss_disp</pre>
+          </div>
+          <div>
+            <h4>推理路径 (无 labels)</h4>
+            <pre class="code"><span class="c"># 1. 按 modality_positions 切片 x0_pred</span>
+<span class="k">for</span> (offset, length) <span class="k">in</span> modality_positions:
+    x0_pred_.append(x0_pred[i, offset:offset+length])
+
+<span class="c"># 2. 移除 time/AR embedding tokens</span>
+<span class="k">if</span> add_time_embeds <span class="k">and</span> add_aspect_ratio_embeds:
+    x0_pred_ = x0_pred_[:, 3:, :]  <span class="c"># 移除 H_emb, W_emb, T_emb</span>
+
+<span class="c"># 3. Unpatchify</span>
+x0_pred_ = self.unpatchify(x0_pred_, h_, w_, T=T)
+<span class="c"># [N, T, p²*C] → [N, C, T, H*p, W*p]</span>
+
+<span class="k">return</span> logits, x0_pred_</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- PANEL: Embeds & Prepare -->
+<!-- ================================================================ -->
+<div id="panel-embeds" class="panel">
+  <div class="card">
+    <h3>SimplePatchEmbedding — Conv2d 像素 Patchifier</h3>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4>输入 → 输出</h4>
+          <div class="highlight">
+            <strong>pixel_values</strong> <span class="shape">[B, 3, H, W]</span> (RGB in [-1, 1])
+            <br>↓ Conv2d(kernel=patch_size=2, stride=2, out_ch=hidden_size)
+            <br>→ <span class="shape">[B, hidden_size, H/2, W/2]</span>
+            <br>↓ Flatten + Transpose
+            <br>→ <span class="shape">[B, (H/2)*(W/2), hidden_size]</span>
+            <br>↓ RMSNorm(hidden_size)
+            <br>→ <span class="shape">[B, num_patches, hidden_size]</span> (最终输出)
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>_patchify_5d — 5D 图像 → Patch Embedding 桥接</h3>
+    <div class="highlight">
+      <strong>image_latents</strong> <span class="shape">[B, C, T, H, W]</span>
+      <ul>
+        <li><strong>reshape_frame_to_batch_dim=True:</strong> reshape → <span class="shape">[B*T, C, H, W]</span> → patch_embed → <span class="shape">[B*T, N_patches, D]</span></li>
+        <li><strong>reshape_frame_to_batch_dim=False:</strong> 逐帧 patch_embed → concat → <span class="shape">[B, N_patches*T, D]</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>TimestepEmbedder — 时间步正弦编码</h3>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4>t → time_embeds</h4>
+          <div class="highlight">
+            <strong>t</strong> <span class="shape">[N]</span> 标量时间步 (0~1)
+            <br>↓ timestep_embedding(t, dim=256, max_period=10000)
+            <br>→ 正弦编码: [cos(w₀*t), sin(w₀*t), cos(w₁*t), sin(w₁*t), ...]
+            <br>→ <span class="shape">[N, 256]</span>
+            <br>↓ MLP: Linear(256→D) → SiLU → Linear(D→D)
+            <br>→ <span class="shape">[N, D]</span> time_embeds
+          </div>
+          <div class="desc" style="margin-top:8px">频率: w_k = exp(-k * log(10000) / 128), k = 0..127</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>build_rope — 3D 旋转位置编码</h3>
+    <table>
+      <tr><th>维度</th><th>分配</th><th>说明</th></tr>
+      <tr><td>T (时间)</td><td>attention_head_dim // 4 = 16</td><td>视频帧维度</td></tr>
+      <tr><td>H (高度)</td><td>attention_head_dim // 8 * 3 = 24</td><td>patch 高度维度</td></tr>
+      <tr><td>W (宽度)</td><td>attention_head_dim // 8 * 3 = 24</td><td>patch 宽度维度</td></tr>
+    </table>
+    <div class="desc">为 latent 空间中的 (T, H/patch, W/patch) 网格的每个位置生成 3D RoPE 旋转矩阵 <span class="shape">[T*Hp*Wp, Dh, 2, 2]</span></div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- PANEL: Diffusion Head -->
+<!-- ================================================================ -->
+<div id="panel-diffhead" class="panel">
+  <div class="card">
+    <h3>Diffusion Head 详细结构</h3>
+
+    <h4>ModulatedAttentionBlock (×10 layers)</h4>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4><span class="tag c3">adaLN</span> 自适应层归一化调制</h4>
+          <div class="highlight">
+            <code>time_embeds</code> <span class="shape">[B*n_imgs, D]</span>
+            <br>↓ SiLU → Linear(D → 6×D)
+            <br>→ shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp
+            <br>
+            <br><strong>关键:</strong> 调制参数只应用到图像 token 位置（由 modality_positions 确定）。
+            文本位置的 hidden states 保持不变（shift=0, scale=0, gate=1）。
+          </div>
+        </div>
+        <div class="flow-node" style="flex:1;max-width:none;">
+          <h4><span class="tag c4">Self-Attn</span> + MLP（带调制）</h4>
+          <div class="highlight">
+            <strong>Attention Block:</strong>
+            <br>h = RMSNorm(h)
+            <br>h = h * (1+scale_msa) + shift_msa
+            <br>h = SelfAttention(h, rope_3d, omni_mask)
+            <br>h = residual + gate_msa * h
+            <br>
+            <br><strong>MLP Block:</strong>
+            <br>h = RMSNorm(h)
+            <br>h = h * (1+scale_mlp) + shift_mlp
+            <br>h = MLP(h)  ← gate_proj/up_proj/down_proj
+            <br>h = residual + gate_mlp * h
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h4 style="margin-top:20px">Self-Attention 中的 3D RoPE 应用</h4>
+    <div class="highlight">
+      在 <code>SdpaAttention.forward()</code> 中:
+      <ol style="margin-left:20px;font-size:12px;color:var(--text2)">
+        <li>Q, K 投影 → reshape 为 <span class="shape">[B, num_heads, S, head_dim]</span></li>
+        <li>通过 <code>apply_rope_image3d_text1d</code>: 文本位置用 1D RoPE (cos/sin), 图像位置用 3D RoPE</li>
+        <li>图像 token: skip time_embedding token (offset+0), 从 offset+1 开始应用 3D RoPE</li>
+        <li>SDPA / FlexAttention 计算 attention weights</li>
+        <li>GQA: key_value_heads=8, query_heads=24, repeat_kv 扩展</li>
+      </ol>
+    </div>
+
+    <h4 style="margin-top:20px">FinalLayer → x0 预测</h4>
+    <div class="highlight">
+      <code>time_embeds</code> → SiLU → Linear(D→2D) → shift, scale
+      <br>调制仅应用于图像 token 位置的 hidden states
+      <br>RMSNorm(h) * (1+scale) + shift → Linear(D → patch_size² × C)
+      <br>→ x0_pred <span class="shape">[B, S, patch_size² × C]</span>
+      <br>(patch_size=2, C=image_latent_dim=16 → 2²×16 = 64 维输出)
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Masked Image (DeTok 集成)</h3>
+    <div class="highlight">
+      在 <code>_prepare_embeds</code> 中，当 <code>enable_mask_token=True</code> 且处于训练模式时:
+      <ul>
+        <li>随机选取 masked_image_ratio_min ~ masked_image_ratio 比例的 patch</li>
+        <li>将这些 patch 的 embedding 替换为可学习的 <code>self.mask_token</code> <span class="shape">[1, 1, hidden_size]</span></li>
+        <li>模型被训练从被 mask 的 patch embedding 中重建完整图像</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- PANEL: Loss -->
+<!-- ================================================================ -->
+<div id="panel-loss" class="panel">
+  <div class="card">
+    <h3>Loss 计算全景</h3>
+    <table>
+      <tr><th>Loss</th><th>函数</th><th>公式</th><th>作用域</th></tr>
+      <tr>
+        <td><code>loss_ntp</code></td>
+        <td><code>next_token_prediction(logits, text_labels, vocab_size)</code></td>
+        <td>CrossEntropy(logits[:,:-1].view(-1,V), labels[:,1:].view(-1), ignore=-100)</td>
+        <td>仅 text_labels ≠ -100 的 token 位置</td>
+      </tr>
+      <tr>
+        <td><code>loss_flow</code></td>
+        <td><code>jit_x0_prediction_loss(x0_pred, new_image_labels, t, image_masks)</code></td>
+        <td>MSE(x0_pred, x0_target) × 1/(1-t)² × image_masks</td>
+        <td>仅 image_masks=1 的 token 位置</td>
+      </tr>
+      <tr>
+        <td><code>loss_disp</code></td>
+        <td><code>disp_loss(act[-1])</code></td>
+        <td>InfoNCE-L2: log(mean(exp(-||z_i - z_j||² / D)))</td>
+        <td>最后一层 diff head 的激活 (pairwise distance)</td>
+      </tr>
+    </table>
+
+    <h4 style="margin-top:20px">Total Loss</h4>
+    <pre class="code">total_loss = flow_coeff * loss_flow + ntp_coeff * loss_ntp  <span class="c"># 默认均为 1.0</span>
+<span class="k">if</span> use_disp: total_loss += 0.25 * loss_disp</pre>
+  </div>
+
+  <div class="card">
+    <h3>JiT x0 Prediction Loss 权重分析</h3>
+    <div class="highlight">
+      <strong>loss = MSE(x0_pred, x0_target) / (1-t)²</strong>
+      <ul>
+        <li>t ≈ 1 (几乎干净): 1/(1-t)² 很大 → 对近干净图像的预测误差惩罚更重</li>
+        <li>t ≈ 0 (纯噪声): 1/(1-t)² ≈ 1 → 标准 MSE 权重</li>
+        <li>clamp_min=5e-2 避免除零</li>
+        <li><code>image_masks</code> 确保只计算图像 token 位置的 loss</li>
+        <li>EDIT 任务: image_masks 仅在 target 图像段为 1，raw 图像段 loss=0</li>
+        <li>MMU 任务 und_max_t0=1.0: image_masks 被清零，loss_flow=0</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>各任务类型 Loss 对照</h3>
+    <table>
+      <tr><th>data_type</th><th>loss_ntp</th><th>loss_flow</th><th>说明</th></tr>
+      <tr>
+        <td>t2i</td>
+        <td>0 (text_labels 全部 -100)</td>
+        <td>✅ (image_masks=1)</td>
+        <td>纯扩散 loss，文本仅作为条件</td>
+      </tr>
+      <tr>
+        <td>mmu</td>
+        <td>✅ (response tokens 有真实 label)</td>
+        <td>0 或轻微 (取决于 mmu_noise)</td>
+        <td>主要训练 LM head，可选轻微去噪</td>
+      </tr>
+      <tr>
+        <td>edit_interleaved</td>
+        <td>0 (全部 -100)</td>
+        <td>✅ (仅 target 图像)</td>
+        <td>raw 图像 image_masks=0，target 图像 image_masks=1</td>
+      </tr>
+      <tr>
+        <td>mmu_interleaved</td>
+        <td>✅</td>
+        <td>0 (und_max_t0=1.0 时 masks=0)</td>
+        <td>多图理解任务</td>
+      </tr>
+      <tr>
+        <td>mmu_text</td>
+        <td>✅</td>
+        <td>0 (image_latents=None)</td>
+        <td>纯文本对话</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>推理路径: x0_pred → 最终图像</h3>
+    <div class="highlight">
+      <strong>推理时无 loss 计算，直接输出预测的干净图像:</strong>
+      <ol style="margin-left:20px;font-size:12px;color:var(--text2)">
+        <li>从 x0_pred <span class="shape">[B, S, p²*C]</span> 中按 <code>modality_positions</code> 切片出图像区域 → <span class="shape">[N, L, p²*C]</span></li>
+        <li>若 add_time_embeds + add_aspect_ratio_embeds: 移除前 3 个 token (H/W/T emb)</li>
+        <li>若 add_time_embeds only: 移除前 1 个 token (T emb)</li>
+        <li>unpatchify: <span class="shape">[N, T, p²*C]</span> → <span class="shape">[N, C, T, Hp*p, Wp*p]</span></li>
+        <li>即 patch_size=2 时: <span class="shape">[N, p²*C, T, Hp, Wp]</span> → reshape → <span class="shape">[N, C, T, Hp*2, Wp*2]</span></li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[onclick*="${name}"]`).classList.add('active');
+  document.getElementById('panel-' + name).classList.add('active');
+}
+</script>
+</body>
+</html>
