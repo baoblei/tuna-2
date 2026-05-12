@@ -1,0 +1,14 @@
+# Text SFT dataset config — pure text-only SFT data.
+# Source: /Users/baobinglei/mock_data/text_mock_data
+#
+# Usage:
+#   python -m tuna.scripts.train --config-name text_sft
+
+_target_: tuna.data.datasets.text_dataset.TextDataset
+
+text_root: /Users/baobinglei/mock_data/text_mock_data
+max_text_length: 4096
+image_size: 512
+clip_image_size: 384
+data_filename_format: "text_data_part_{}.jsonl"
+# cls_dirs: null  # auto-discover: cls1, cls2, ...

@@ -1,0 +1,103 @@
+# =============================================================================
+# Tuna combined training config — 3-stream weighted mixed training.
+#
+# Streams:  t2i  (T2IParquetDataset) — parquet+zip from mock_data
+#           vlm  (VLMDataset)        — jsonl+tar from mock_data
+#           text (TextDataset)       — jsonl text SFT from mock_data
+#
+# Usage:
+#   # Single GPU smoke test
+#   python -m tuna.scripts.train --config-name train_combined \
+#       training.max_steps_per_epoch=5 \
+#       model.load_stage1_model=no
+#
+#   # Multi-GPU (FSDP, 8 GPUs)
+#   torchrun --standalone --nproc-per-node=8 -m tuna.scripts.train \
+#       --config-name train_combined \
+#       model.load_stage1_model=/path/to/ckpt.pt
+# =============================================================================
+
+defaults:
+  - model: tuna_2_pixel_7b
+  - _self_
+
+# =============================================================================
+# Data — multi-stream weighted sampling
+# =============================================================================
+
+data:
+  sync_sampling: true
+  sampling_weights:
+    t2i: 0.40
+    vlm: 0.35
+    text: 0.25
+
+  streams:
+    t2i:
+      _target_: tuna.data.datasets.t2i_parquet_dataset.T2IParquetDataset
+      config_yaml: /Users/baobinglei/mock_data/config/mock_t2i.yaml
+      image_size: 256
+      max_text_length: 256
+      center_crop: true
+      batch_size: 2
+      num_workers: 8
+
+    vlm:
+      _target_: tuna.data.datasets.vlm_dataset.VLMDataset
+      annotation_dir: /Users/baobinglei/mock_data/vlm_mock_data/annotations
+      image_root: /Users/baobinglei/mock_data/vlm_mock_data/images
+      image_size: 512
+      max_text_length: 4096
+      data_filename_format: "data_part_{}.jsonl"
+      range_start: 1
+      range_end: 3
+      batch_size: 1
+      num_workers: 8
+
+    text:
+      _target_: tuna.data.datasets.text_dataset.TextDataset
+      text_root: /Users/baobinglei/mock_data/text_mock_data
+      max_text_length: 4096
+      image_size: 512
+      batch_size: 3
+      num_workers: 8
+
+# =============================================================================
+# Training
+# =============================================================================
+
+training:
+  output_dir: ./outputs/train_combined
+
+  # --- Schedule ---
+  max_epochs: 1
+  max_steps_per_epoch: 1000000
+  learning_rate: 2.0e-5
+  weight_decay: 1.0e-2
+  warmup_steps: 1000
+
+  # --- Batching ---
+  batch_size: 4
+  num_workers: 8
+  gradient_accumulation_steps: 1
+
+  # --- Precision ---
+  mixed_precision: bf16
+
+  # --- EMA ---
+  ema_decay: 0.9999
+
+  # --- Checkpointing ---
+  save_every: 500
+  keep_last: 3
+  gc_interval: 5001
+
+  # --- FSDP ---
+  fsdp:
+    enable: true
+    sharding_strategy: SHARD_GRAD_OP
+    state_dict_type: SHARDED_STATE_DICT
+    mixed_precision:
+      param_dtype: bf16
+      reduce_dtype: bf16
+      cast_root_forward_inputs: true

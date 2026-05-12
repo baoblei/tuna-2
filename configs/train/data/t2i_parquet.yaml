@@ -1,0 +1,12 @@
+# T2I Parquet dataset config — Parquet metadata + Zip image archives.
+# Source: /Users/baobinglei/mock_data/mock_t2i_dataset
+#
+# Usage:
+#   python -m tuna.scripts.train --config-name t2i_parquet
+
+_target_: tuna.data.datasets.t2i_parquet_dataset.T2IParquetDataset
+
+config_yaml: /Users/baobinglei/mock_data/config/mock_t2i.yaml
+image_size: 256
+max_text_length: 256
+center_crop: true

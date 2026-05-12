@@ -10,7 +10,10 @@
 from __future__ import annotations
 
 from tuna.data.datasets.edit_dataset import EditDataset
+from tuna.data.datasets.t2i_parquet_dataset import T2IParquetDataset
+from tuna.data.datasets.text_dataset import TextDataset
 from tuna.data.datasets.ti_dataset import TIDataset
+from tuna.data.datasets.vlm_dataset import VLMDataset
 
 
-__all__ = ["EditDataset", "TIDataset"]
+__all__ = ["EditDataset", "T2IParquetDataset", "TextDataset", "TIDataset", "VLMDataset"]

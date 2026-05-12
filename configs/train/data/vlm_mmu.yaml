@@ -1,0 +1,15 @@
+# VLM dataset config — JSONL annotations + TAR image archives.
+# Source: /Users/baobinglei/mock_data/vlm_mock_data
+#
+# Usage:
+#   python -m tuna.scripts.train --config-name vlm_mmu
+
+_target_: tuna.data.datasets.vlm_dataset.VLMDataset
+
+annotation_dir: /Users/baobinglei/mock_data/vlm_mock_data/annotations
+image_root: /Users/baobinglei/mock_data/vlm_mock_data/images
+image_size: 512
+max_text_length: 4096
+data_filename_format: "data_part_{}.jsonl"
+range_start: 1
+range_end: 3
